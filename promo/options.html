@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Mix Booth: opciones</title>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; }
+  body { width: 1280px; background: #0b0f1d; color: #fff; font-family: Inter, sans-serif; padding: 28px 36px; box-sizing: border-box; }
+  h2 { margin: 0 0 14px; font-size: 22px; letter-spacing: 0.04em; }
+  .row { display: flex; gap: 28px; margin-bottom: 30px; }
+  .opt { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+  .tag { font: 800 26px Anton, sans-serif; letter-spacing: 0.06em; }
+  /* La tarjeta de la Marketplace a su tamaño real */
+  .card { width: 176px; padding: 12px; border: 1px solid #6c86c9; border-radius: 10px; background: #0d1426; }
+  .card .img { width: 176px; height: 176px; overflow: hidden; border-radius: 4px; position: relative; }
+  .card .img > div { width: 1000px; height: 1000px; transform: scale(0.176); transform-origin: 0 0; position: absolute; top: 0; left: 0; }
+  .card b { display: block; margin-top: 8px; font-size: 15px; }
+  .card span { font-size: 13px; opacity: 0.85; }
+  .big { width: 340px; height: 340px; overflow: hidden; border-radius: 8px; position: relative; }
+  .big > div { width: 1000px; height: 1000px; transform: scale(0.34); transform-origin: 0 0; position: absolute; }
+
+  /* ---------- Diseño A: un disco enorme y el título apilado ---------- */
+  .a { background: radial-gradient(70% 90% at 78% 50%, rgba(255,60,140,0.35), transparent 70%), radial-gradient(60% 80% at 10% 100%, rgba(40,200,240,0.3), transparent 70%), #07080f; position: relative; overflow: hidden; }
+  .a h1 { position: absolute; left: 60px; top: 50px; margin: 0; font: 400 250px/0.88 Anton, sans-serif; letter-spacing: 0.01em; text-shadow: 0 0 60px rgba(255,255,255,0.25); }
+  .a .disc { position: absolute; right: -200px; bottom: -220px; width: 860px; height: 860px; border-radius: 50%;
+    background: radial-gradient(circle, #05060c 0 2.4%, transparent 2.5%), conic-gradient(from 200deg, #ff3d8f, #2bd4ff, #ff3d8f) content-box, radial-gradient(circle, transparent 0 29%, #111 29.3%) ;
+    box-shadow: 0 0 0 12px #0a0a0a, 0 0 120px rgba(255,60,140,0.6); }
+  .a .disc::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, transparent 0 30%, transparent 30%), repeating-radial-gradient(circle, rgba(255,255,255,0.05) 0 2px, transparent 2px 5px); -webkit-mask-image: radial-gradient(circle, transparent 30%, #000 30.5%); }
+  .a .disc::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: linear-gradient(120deg, rgba(255,255,255,0.18), transparent 35%, transparent 65%, rgba(255,255,255,0.08)); }
+  .a .label { position: absolute; inset: 31%; border-radius: 50%; background: conic-gradient(from 200deg, #ff3d8f, #2bd4ff, #ff3d8f); }
+  .a .label::after { content: ""; position: absolute; inset: 46%; border-radius: 50%; background: #05060c; }
+  .a .groove { position: absolute; inset: 0; border-radius: 50%; background: repeating-radial-gradient(circle, #121212 0 3px, #1c1c1c 3px 5px); -webkit-mask-image: radial-gradient(circle, transparent 30%, #000 30.5%); }
+
+  /* ---------- Diseño B: el crossfader como protagonista ---------- */
+  .b { background: linear-gradient(90deg, #0a3a52 0%, #07080f 45%, #07080f 55%, #520a30 100%); position: relative; overflow: hidden; }
+  .b h1 { position: absolute; left: 0; right: 0; top: 90px; margin: 0; text-align: center; font: 400 260px/0.9 Anton, sans-serif; letter-spacing: 0.04em; }
+  .b .rail { position: absolute; left: 150px; right: 150px; top: 770px; height: 26px; border-radius: 13px; background: linear-gradient(90deg, #2bd4ff, #ff3d8f); box-shadow: 0 0 60px rgba(255,61,143,0.5), 0 0 60px rgba(43,212,255,0.5); }
+  .b .knob { position: absolute; left: 420px; top: 690px; width: 160px; height: 190px; border-radius: 22px; background: linear-gradient(#ffffff, #a9a9a9); box-shadow: 0 20px 50px rgba(0,0,0,0.7); }
+  .b .knob::after { content: ""; position: absolute; left: 50%; top: 18px; bottom: 18px; width: 10px; margin-left: -5px; border-radius: 5px; background: #222; }
+  .b .dot { position: absolute; top: 718px; width: 130px; height: 130px; border-radius: 50%; }
+  .b .dot.l { left: 40px; background: radial-gradient(circle, #2bd4ff, #0b4f7a); box-shadow: 0 0 80px #2bd4ff; }
+  .b .dot.r { right: 40px; background: radial-gradient(circle, #ff3d8f, #6a0f3d); box-shadow: 0 0 80px #ff3d8f; }
+
+  /* ---------- Diseño C: onda de neón y dos discos detrás ---------- */
+  .c { background: #06070d; position: relative; overflow: hidden; }
+  .c .bars { position: absolute; left: 0; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 0 30px; }
+  .c .bars i { flex: 1; border-radius: 6px; background: linear-gradient(180deg, #2bd4ff, #ff3d8f); opacity: 0.9; box-shadow: 0 0 24px rgba(255,61,143,0.4); }
+  .c h1 { position: absolute; left: 0; right: 0; top: 230px; margin: 0; text-align: center; font: 400 280px/0.9 Anton, sans-serif; letter-spacing: 0.03em; color: #fff; text-shadow: 0 8px 0 #06070d, 0 0 70px rgba(0,0,0,0.9); }
+  .c .shade { position: absolute; inset: 0; background: radial-gradient(60% 50% at 50% 50%, rgba(6,7,13,0.85), transparent 75%); }
+
+  /* ---------- Iconos, en la barra de Spotify a su tamaño ---------- */
+  .bar { display: flex; align-items: center; gap: 22px; padding: 12px 18px; border-radius: 999px; background: #121a30; color: #b3b8c8; }
+  .bar svg { width: 16px; height: 16px; display: block; }
+  .bar .mine { color: #fff; }
+  .iconbig svg { width: 64px; height: 64px; color: #fff; }
+</style>
+</head>
+<body>
+  <h2>IMAGEN DE LA TARJETA (tamaño real y ampliada)</h2>
+  <div class="row" id="images"></div>
+  <h2>ICONO EN LA BARRA (tamaño real y ampliado)</h2>
+  <div class="row" id="icons"></div>
+
+<template id="A"><div class="a"><div class="disc"><div class="groove"></div><div class="label"></div></div><h1>MIX<br>BOOTH</h1></div></template>
+<template id="B"><div class="b"><h1>MIX<br>BOOTH</h1><div class="dot l"></div><div class="dot r"></div><div class="rail"></div><div class="knob"></div></div></template>
+<template id="C"><div class="c"><div class="bars"></div><div class="shade"></div><h1>MIX<br>BOOTH</h1></div></template>
+
+<script>
+  const fill = (root) => {
+    const bars = root.querySelector(".bars");
+    if (!bars) return;
+    for (let i = 0; i < 34; i++) {
+      const h = 18 + 70 * Math.abs(Math.sin(i * 0.55) * Math.cos(i * 0.21)) + (i % 7 === 0 ? 10 : 0);
+      const bar = document.createElement("i");
+      bar.style.height = h + "%";
+      bars.append(bar);
+    }
+  };
+  // ?solo=A muestra solo ese diseño a tamaño completo, para guardarlo como imagen
+  const solo = new URLSearchParams(location.search).get("solo");
+  if (solo) {
+    const node = document.getElementById(solo).content.firstElementChild.cloneNode(true);
+    document.body.innerHTML = "";
+    document.body.style.cssText = "width: 1000px; height: 1000px; padding: 0; overflow: hidden;";
+    node.style.width = node.style.height = "1000px";
+    fill(node);
+    document.body.append(node);
+    throw new Error("solo");
+  }
+  const images = document.getElementById("images");
+  for (const id of ["A", "B", "C"]) {
+    const opt = document.createElement("div");
+    opt.className = "opt";
+    opt.innerHTML = `<div class="tag">${id}</div><div class="card"><div class="img"></div><b>Mix Booth</b><span>SrPictus</span></div><div class="big"></div>`;
+    for (const holder of [opt.querySelector(".img"), opt.querySelector(".big")]) {
+      const node = document.getElementById(id).content.firstElementChild.cloneNode(true);
+      node.style.width = "1000px";
+      node.style.height = "1000px";
+      fill(node);
+      holder.append(node);
+    }
+    images.append(opt);
+  }
+
+  // Iconos: 1 tocadiscos, 2 disco con brazo, 3 mesa con crossfader. Todos con el mismo trazo que los de Spotify
+  const ICONS = {
+    1: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.2" y="2.2" width="13.6" height="11.6" rx="2"/><circle cx="7" cy="8" r="3.6"/><circle cx="7" cy="8" r="0.9" fill="currentColor" stroke="none"/><path d="M12.4 4.2v5.4l-1.8 1.6" stroke-linecap="round"/></svg>`,
+    2: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7" cy="9" r="6"/><circle cx="7" cy="9" r="2"/><circle cx="7" cy="9" r="0.6" fill="currentColor" stroke="none"/><path d="M14.2 1.4 10.6 7.6" stroke-linecap="round"/><circle cx="14.2" cy="1.6" r="1" fill="currentColor" stroke="none"/></svg>`,
+    3: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.5 1.5v7M8 1.5v7M12.5 1.5v7"/><rect x="2" y="3.4" width="3" height="2" rx="0.6" fill="currentColor" stroke="none"/><rect x="6.5" y="5" width="3" height="2" rx="0.6" fill="currentColor" stroke="none"/><rect x="11" y="2.4" width="3" height="2" rx="0.6" fill="currentColor" stroke="none"/><path d="M1.5 12.5h13"/><rect x="5.6" y="10.6" width="4.8" height="3.8" rx="1" fill="currentColor" stroke="none"/></svg>`,
+  };
+  const spotify = {
+    queue: `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M15 15H1v-1.5h14V15zm0-4.5H1V9h14v1.5zm-14-7A2.5 2.5 0 0 1 3.5 1h9a2.5 2.5 0 0 1 0 5h-9A2.5 2.5 0 0 1 1 3.5zm2.5-1a1 1 0 0 0 0 2h9a1 1 0 1 0 0-2h-9z"/></svg>`,
+    volume: `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M9.741.85a.75.75 0 0 1 .375.65v13a.75.75 0 0 1-1.125.65l-6.925-4a3.642 3.642 0 0 1-1.33-4.967 3.639 3.639 0 0 1 1.33-1.332l6.925-4a.75.75 0 0 1 .75 0zm-6.924 5.3a2.139 2.139 0 0 0 0 3.7l5.8 3.35V2.8l-5.8 3.35zm8.683 4.29V5.56a2.75 2.75 0 0 1 0 4.88z"/></svg>`,
+  };
+  const icons = document.getElementById("icons");
+  for (const id of [1, 2, 3]) {
+    const opt = document.createElement("div");
+    opt.className = "opt";
+    opt.innerHTML = `<div class="tag">${id}</div><div class="bar">${spotify.queue}<span class="mine">${ICONS[id]}</span>${spotify.volume}</div><div class="iconbig">${ICONS[id]}</div>`;
+    icons.append(opt);
+  }
+</script>
+</body>
+</html>
