@@ -2,7 +2,7 @@
   {
     "name": "Mix Booth",
     "description": "A DJ booth for Spotify's mixed playlists: two decks spinning at their BPM, a mixer that follows each transition's real EQ, filter and volume curves, and an editor to change how every transition sounds.",
-    "preview": "preview.jpg",
+    "preview": "preview.png",
     "main": "mix-booth.js",
     "readme": "README.md",
     "authors": [{ "name": "SrPictus", "url": "https://github.com/SrPictus" }],

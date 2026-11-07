@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mix Booth preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; }
+  body {
+    width: 1280px;
+    height: 800px;
+    overflow: hidden;
+    position: relative;
+    background:
+      radial-gradient(60% 70% at 18% 62%, rgba(40, 200, 230, 0.32), transparent 70%),
+      radial-gradient(60% 70% at 84% 62%, rgba(255, 60, 140, 0.32), transparent 70%),
+      linear-gradient(180deg, #0b0d1a, #05060c);
+    font-family: Inter, sans-serif;
+    color: #fff;
+  }
+  h1 {
+    position: absolute;
+    top: 40px;
+    left: 0;
+    right: 0;
+    margin: 0;
+    text-align: center;
+    font-family: Anton, sans-serif;
+    font-weight: 400;
+    font-size: 132px;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-shadow: 0 0 50px rgba(255, 255, 255, 0.35);
+  }
+  p {
+    position: absolute;
+    top: 186px;
+    left: 0;
+    right: 0;
+    margin: 0;
+    text-align: center;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: rgba(255, 255, 255, 0.78);
+  }
+  .deck {
+    position: absolute;
+    top: 286px;
+    width: 440px;
+    height: 440px;
+  }
+  .deck.a { left: 40px; --glow: 70, 225, 255; --l1: #2bd4ff; --l2: #0b4f7a; }
+  .deck.b { right: 40px; --glow: 255, 70, 150; --l1: #ff4f9a; --l2: #6a0f3d; }
+  .ring {
+    position: absolute;
+    inset: -18px;
+    border-radius: 50%;
+    border: 4px solid rgba(var(--glow), 0.9);
+    box-shadow: 0 0 70px rgba(var(--glow), 0.75), inset 0 0 40px rgba(var(--glow), 0.35);
+  }
+  .vinyl {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle, transparent 31%, rgba(255,255,255,0.06) 31.5%, transparent 33%),
+      repeating-radial-gradient(circle, #101010 0 2px, #1c1c1c 2px 3px);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.7), inset 0 0 0 8px #080808;
+  }
+  .vinyl::before {
+    content: "";
+    position: absolute;
+    inset: 2.5%;
+    border-radius: 50%;
+    background: repeating-conic-gradient(rgba(255,255,255,0.5) 0 1.4deg, transparent 1.4deg 7.5deg);
+    -webkit-mask-image: radial-gradient(circle, transparent 65%, #000 65.5%, #000 68%, transparent 68.5%);
+  }
+  .vinyl::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: linear-gradient(130deg, rgba(255,255,255,0.16), transparent 40%, transparent 60%, rgba(255,255,255,0.07));
+  }
+  .label {
+    position: absolute;
+    inset: 30%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--l1), var(--l2));
+    box-shadow: 0 0 0 4px #080808, 0 0 40px rgba(var(--glow), 0.6);
+  }
+  .label::after {
+    content: "";
+    position: absolute;
+    inset: 46%;
+    border-radius: 50%;
+    background: #05060c;
+  }
+  .arm {
+    position: absolute;
+    top: -6%;
+    right: -4%;
+    width: 14px;
+    height: 50%;
+    border-radius: 7px;
+    background: linear-gradient(90deg, #6a6a6a, #eee 50%, #7a7a7a);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.6);
+    transform-origin: 50% 8px;
+    transform: rotate(24deg);
+  }
+  .arm::before {
+    content: "";
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    width: 46px;
+    height: 46px;
+    margin-left: -23px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #cfcfcf, #2b2b2b);
+  }
+  .arm::after {
+    content: "";
+    position: absolute;
+    bottom: -24px;
+    left: 50%;
+    width: 24px;
+    height: 36px;
+    margin-left: -12px;
+    border-radius: 5px;
+    background: linear-gradient(#ddd, #5c5c5c);
+  }
+  .mixer {
+    position: absolute;
+    left: 50%;
+    top: 290px;
+    width: 230px;
+    height: 440px;
+    margin-left: -115px;
+    border-radius: 26px;
+    background: rgba(0,0,0,0.55);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+  }
+  .knobs {
+    position: absolute;
+    top: 28px;
+    left: 0;
+    right: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    row-gap: 18px;
+    justify-items: center;
+  }
+  .knobs i {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #3e3e3e, #111);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.7), inset 0 0 0 2px rgba(255,255,255,0.08);
+  }
+  .knobs i::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 5px;
+    width: 4px;
+    height: 14px;
+    margin-left: -2px;
+    border-radius: 2px;
+    background: #fff;
+    transform-origin: 50% 17px;
+    transform: rotate(var(--a, 0deg));
+  }
+  .knobs i.cyan::after { background: #46e1ff; }
+  .knobs i.pink::after { background: #ff4696; }
+  .meters { position: absolute; top: 292px; left: 0; right: 0; display: flex; justify-content: center; gap: 80px; }
+  .meters b { position: relative; width: 12px; height: 90px; border-radius: 6px; background: rgba(255,255,255,0.08); overflow: hidden; }
+  .meters b::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: var(--v); background: linear-gradient(0deg, #4dff9a, #ffe14d 70%, #ff4d6d); background-size: 100% 90px; background-position: bottom; }
+  .fader { position: absolute; left: 24px; right: 24px; bottom: 28px; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.3); }
+  .fader::after { content: ""; position: absolute; left: 55%; top: -12px; width: 24px; height: 28px; margin-left: -12px; border-radius: 5px; background: linear-gradient(#f2f2f2, #9a9a9a); box-shadow: 0 3px 10px rgba(0,0,0,0.7); }
+</style>
+</head>
+<body>
+  <h1>MIX BOOTH</h1>
+  <p>A DJ booth for Spotify's mixed playlists</p>
+  <div class="deck a"><div class="ring"></div><div class="vinyl"><div class="label"></div></div><div class="arm"></div></div>
+  <div class="mixer">
+    <div class="knobs">
+      <i style="--a: -10deg"></i><i style="--a: 25deg"></i>
+      <i style="--a: 0deg"></i><i style="--a: -40deg"></i>
+      <i class="cyan" style="--a: -95deg"></i><i class="pink" style="--a: 60deg"></i>
+      <i style="--a: 0deg"></i><i class="pink" style="--a: -70deg"></i>
+    </div>
+    <div class="meters"><b style="--v: 62%"></b><b style="--v: 84%"></b></div>
+    <div class="fader"></div>
+  </div>
+  <div class="deck b"><div class="ring"></div><div class="vinyl"><div class="label"></div></div><div class="arm"></div></div>
+</body>
+</html>

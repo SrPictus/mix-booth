@@ -81,18 +81,60 @@
     return { out: side("Out"), in: side("In") };
   }
 
-  const coverOf = (meta) => {
-    const image = meta?.image_xlarge_url ?? meta?.image_large_url ?? meta?.image_url ?? meta?.image_small_url;
-    return image?.startsWith("spotify:image:") ? `https://i.scdn.co/image/${image.split(":").pop()}` : image ?? null;
-  };
+  const imageUrl = (image) => (image?.startsWith("spotify:image:") ? `https://i.scdn.co/image/${image.split(":").pop()}` : image ?? null);
+  // La etiqueta del disco mide unos 130 px: la portada de 300 px basta y se decodifica mucho más rápido que la de 640
+  const coverOf = (meta) => imageUrl(meta?.image_large_url ?? meta?.image_url ?? meta?.image_xlarge_url ?? meta?.image_small_url);
+  // Para el fondo, que va desenfocado, sobra con la más pequeña
+  const smallCoverOf = (meta) => imageUrl(meta?.image_small_url ?? meta?.image_url ?? meta?.image_large_url);
 
   const trackInfo = (item) => item?.uri ? {
     uri: item.uri,
     name: item.name ?? item.metadata?.title ?? "",
     artist: item.artists?.map((a) => a.name).join(", ") ?? item.metadata?.artist_name ?? "",
     cover: coverOf(item.metadata) ?? item.images?.[0]?.url ?? null,
+    small: smallCoverOf(item.metadata) ?? item.images?.[item.images.length - 1]?.url ?? null,
     length: item.duration?.milliseconds ?? Number(item.metadata?.duration) ?? 0,
   } : null;
+
+  // Las imágenes se descargan y decodifican aparte, y solo se cambian ya listas: así el cambio de canción no frena la pantalla
+  const decoded = new Map();
+  function whenDecoded(url) {
+    if (!url) return Promise.resolve(null);
+    if (!decoded.has(url)) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.decoding = "async";
+      img.src = url;
+      decoded.set(url, img.decode().then(() => img, () => null));
+      if (decoded.size > 12) decoded.delete(decoded.keys().next().value);
+    }
+    return decoded.get(url);
+  }
+
+  // El fondo: la portada pintada una vez en un lienzo diminuto ya desenfocado y estirado por CSS.
+  // Se ve igual de borroso que un desenfoque en vivo y no cuesta nada al cambiar de canción
+  function paintBackdrop(canvas, url) {
+    if (canvas.dataset.url === (url ?? "")) return;
+    canvas.dataset.url = url ?? "";
+    whenDecoded(url).then((img) => {
+      if (canvas.dataset.url !== (url ?? "")) return;
+      const ctx = canvas.getContext("2d");
+      canvas.width = canvas.height = 32;
+      ctx.clearRect(0, 0, 32, 32);
+      if (!img) return;
+      ctx.filter = "blur(3px) saturate(1.6) brightness(0.4)";
+      ctx.drawImage(img, -6, -6, 44, 44);
+    });
+  }
+
+  function setLabelImage(label, url) {
+    if (label.dataset.url === (url ?? "")) return;
+    label.dataset.url = url ?? "";
+    whenDecoded(url).then((img) => {
+      if (label.dataset.url !== (url ?? "")) return;
+      label.style.backgroundImage = img ? `url("${url}")` : "none";
+    });
+  }
 
   // ---------- Estilos ----------
 
@@ -113,14 +155,18 @@
       animation: mb-in 0.35s ease;
     }
     @keyframes mb-in { from { opacity: 0; transform: scale(1.02); } }
+    /* Con la cabina abierta no se ve nada de Spotify: el navegador deja de dibujarlo. Así, al cambiar de canción,
+       la letra del panel y el resto de la página no frenan la cabina. Todo sigue funcionando debajo */
+    html.mb-open #main { content-visibility: hidden; }
     .mb-backdrop {
       position: absolute;
-      inset: -60px;
+      top: -10%;
+      left: -10%;
       z-index: -1;
-      background-size: cover;
-      background-position: center;
-      filter: blur(60px) saturate(1.6) brightness(0.35);
+      width: 120%;
+      height: 120%;
       animation: mb-drift 38s ease-in-out infinite alternate;
+      will-change: transform;
     }
     /* La segunda capa es la canción que entra: aparece según avanza el crossfader */
     .mb-backdrop-b { opacity: var(--o, 0); transition: opacity 0.4s ease; animation-delay: -19s; }
@@ -195,9 +241,19 @@
       position: absolute;
       inset: -14px;
       border-radius: 50%;
-      border: 2px solid rgba(var(--glow), calc(0.12 + var(--beat, 0) * 0.6));
-      box-shadow: 0 0 calc(8px + var(--beat, 0) * 56px) rgba(var(--glow), calc(var(--beat, 0) * 0.55));
+      border: 2px solid rgba(var(--glow), 0.12);
       pointer-events: none;
+    }
+    /* El destello va en su propia capa, pintada una vez: en cada beat solo cambia su opacidad */
+    .mb-ring::after {
+      content: "";
+      position: absolute;
+      inset: -2px;
+      border-radius: 50%;
+      border: 2px solid rgba(var(--glow), 0.75);
+      box-shadow: 0 0 56px rgba(var(--glow), 0.55);
+      opacity: var(--beat, 0);
+      will-change: opacity;
     }
     .mb-deck-a { --glow: 109, 240, 255; }
     .mb-deck-b { --glow: 255, 77, 140; }
@@ -277,8 +333,9 @@
       border-radius: 50%;
       background-size: cover;
       background-position: center;
-      box-shadow: 0 0 0 3px #0a0a0a, 0 0 calc(var(--beat, 0) * 30px) rgba(var(--glow), calc(var(--beat, 0) * 0.5));
+      box-shadow: 0 0 0 3px #0a0a0a;
       scale: calc(1 + var(--beat, 0) * 0.035);
+      will-change: scale;
     }
     .mb-label::after {
       content: "";
@@ -327,8 +384,10 @@
     .mb-knob.is-cut i::after { background: #ff4d6d; }
     .mb-knob.is-boost i::after { background: #6df0ff; }
     .mb-meter { position: relative; width: 8px; height: 90px; border-radius: 4px; background: rgba(255,255,255,0.1); overflow: hidden; }
-    .mb-meter b { position: absolute; left: 0; right: 0; bottom: 0; height: var(--v, 0%); background: linear-gradient(0deg, #4dff9a, #ffe14d 70%, #ff4d6d); background-size: 100% 90px; background-position: bottom; }
-    .mb-meter u { position: absolute; left: 0; right: 0; bottom: var(--p, 0%); height: 2px; background: #fff; opacity: 0.85; }
+    /* El medidor completo se pinta una vez y se tapa desde arriba: subir y bajar es solo mover una capa */
+    .mb-meter b { position: absolute; inset: 0; background: linear-gradient(0deg, #4dff9a, #ffe14d 70%, #ff4d6d); }
+    .mb-meter i { position: absolute; inset: 0; background: #1a1a1a; transform-origin: top; transform: scaleY(calc(1 - var(--v, 0))); will-change: transform; }
+    .mb-meter u { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: #fff; opacity: 0.85; transform: translateY(calc(var(--p, 0) * -90px)); will-change: transform; }
     .mb-xfader { grid-column: 1 / -1; position: relative; height: 26px; margin-top: 6px; }
     .mb-xfader::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.25); }
     .mb-xfader i {
@@ -548,7 +607,8 @@
     const channel = el("div", "mb-channel", parent);
     const knobs = { high: buildKnob(channel, "HIGH"), mid: buildKnob(channel, "MID"), low: buildKnob(channel, "LOW"), cutoff: buildKnob(channel, "FILTER") };
     const meter = el("div", "mb-meter", channel);
-    const level = el("b", "", meter);
+    el("b", "", meter);
+    const level = el("i", "", meter);
     const peakMark = el("u", "", meter);
     return { knobs, level, peakMark, peak: 0 };
   }
@@ -559,10 +619,11 @@
   function openBooth() {
     if (booth) return;
     const root = el("div", "mb-booth", document.body);
+    document.documentElement.classList.add("mb-open");
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-label", "Mix Booth");
-    const backdrop = el("div", "mb-backdrop", root);
-    const backdropB = el("div", "mb-backdrop mb-backdrop-b", root);
+    const backdrop = el("canvas", "mb-backdrop", root);
+    const backdropB = el("canvas", "mb-backdrop mb-backdrop-b", root);
     const count = el("div", "mb-count", root);
     count.setAttribute("aria-hidden", "true");
     const top = el("div", "mb-top", root);
@@ -602,6 +663,11 @@
     tip.setAttribute("aria-hidden", "true");
 
     booth = { root, backdrop, backdropB, count, status, edit, deckA, deckB, channelA, channelB, knob, fxA, fxB, timeline, wave, played, mixZone, head, timeText, tip, drag: null, waveKey: null, lastCount: null, last: performance.now() };
+
+    booth.waveObserver = new ResizeObserver(([entry]) => {
+      if (booth) booth.waveSize = { width: Math.round(entry.contentRect.width), height: Math.round(entry.contentRect.height) };
+    });
+    booth.waveObserver.observe(wave);
 
     const msAt = (event) => {
       const box = timeline.getBoundingClientRect();
@@ -657,6 +723,8 @@
   function closeBooth() {
     if (!booth) return;
     cancelAnimationFrame(frame);
+    document.documentElement.classList.remove("mb-open");
+    booth.waveObserver?.disconnect();
     booth.root.remove();
     booth = null;
     boothButton.active = false;
@@ -759,8 +827,8 @@
   function paintChannel(channel, side, t, level, dt) {
     for (const band of ["high", "mid", "low", "cutoff"]) paintKnob(channel.knobs[band], t === null ? 0.5 : curveAt(side?.[band], t));
     channel.peak = Math.max(level, channel.peak - dt * 0.0005);
-    setVar(channel.level, "--v", `${Math.round(level * 100)}%`);
-    setVar(channel.peakMark, "--p", `${Math.round(channel.peak * 100)}%`);
+    setVar(channel.level, "--v", level.toFixed(2));
+    setVar(channel.peakMark, "--p", channel.peak.toFixed(2));
   }
 
   function paintDeck(deck, track, bpm, spinning, dt, extra, phase, isCurrent) {
@@ -772,8 +840,7 @@
     setText(deck.artist, track?.artist ?? "");
     const scratching = deck.scratch ? `${deck.scratch.total >= 0 ? "+" : "−"}${(Math.abs(deck.scratch.total / 360) * deck.barMs / 1000).toFixed(1)}s` : "";
     setText(deck.info, scratching || [bpm ? `${Math.round(bpm)} BPM` : "", extra].filter(Boolean).join("  ·  "));
-    const image = track?.cover ? `url("${track.cover}")` : "none";
-    if (deck.label.style.backgroundImage !== image) deck.label.style.backgroundImage = image;
+    setLabelImage(deck.label, track?.cover);
     // El brazo baja sobre el disco mientras suena
     setVar(deck.platter, "--arm", spinning ? "24deg" : "4deg");
     // Un golpe de luz en cada beat que se apaga hasta el siguiente
@@ -789,7 +856,8 @@
   // La onda de la canción, dibujada una vez por canción y tamaño
   function drawWave(analysis, length) {
     const canvas = booth.wave;
-    const width = canvas.clientWidth, height = canvas.clientHeight;
+    // El tamaño lo da el observador: leerlo aquí en cada cuadro obligaría a recalcular toda la página
+    const { width, height } = booth.waveSize ?? { width: 0, height: 0 };
     const key = `${booth.timelineUri}|${width}|${!!analysis}`;
     if (key === booth.waveKey || !width) return;
     booth.waveKey = key;
@@ -876,10 +944,8 @@
     }
 
     // El fondo pasa de los colores de una canción a los de la otra según el crossfader
-    const coverA = state.a?.cover ? `url("${state.a.cover}")` : "none";
-    const coverB = state.b?.cover ? `url("${state.b.cover}")` : "none";
-    if (booth.backdrop.style.backgroundImage !== coverA) booth.backdrop.style.backgroundImage = coverA;
-    if (booth.backdropB.style.backgroundImage !== coverB) booth.backdropB.style.backgroundImage = coverB;
+    paintBackdrop(booth.backdrop, state.a?.small ?? state.a?.cover);
+    paintBackdrop(booth.backdropB, state.b?.small ?? state.b?.cover);
     setVar(booth.backdropB, "--o", (inMix ? mixAmount : 0).toFixed(2));
 
     // La barra de abajo es la canción que suena en Spotify, para poder moverse por ella
