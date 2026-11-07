@@ -120,7 +120,34 @@
       background-size: cover;
       background-position: center;
       filter: blur(60px) saturate(1.6) brightness(0.35);
-      transition: background-image 1s ease;
+      animation: mb-drift 38s ease-in-out infinite alternate;
+    }
+    /* La segunda capa es la canción que entra: aparece según avanza el crossfader */
+    .mb-backdrop-b { opacity: var(--o, 0); transition: opacity 0.4s ease; animation-delay: -19s; }
+    @keyframes mb-drift {
+      from { transform: scale(1.05) rotate(0deg); }
+      to { transform: scale(1.25) rotate(6deg) translate(2%, -2%); }
+    }
+    /* Cuenta atrás de los últimos diez segundos antes de la mezcla */
+    .mb-count {
+      position: absolute;
+      left: 50%;
+      top: 9%;
+      z-index: 1;
+      font-family: var(--encore-title-font-stack, inherit);
+      font-size: clamp(64px, 12vh, 130px);
+      font-weight: 900;
+      line-height: 1;
+      color: #fff;
+      text-shadow: 0 0 40px rgba(255, 77, 140, 0.8);
+      opacity: 0;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    .mb-count.is-on { animation: mb-count 1s ease-out forwards; }
+    @keyframes mb-count {
+      from { opacity: 0.95; transform: translateX(-50%) scale(1.4); }
+      to { opacity: 0; transform: translateX(-50%) scale(1); }
     }
     .mb-top { display: flex; align-items: center; gap: 14px; }
     .mb-top h1 {
@@ -158,10 +185,67 @@
     }
     .mb-deck { display: flex; flex-direction: column; align-items: center; gap: 16px; min-width: 0; transition: opacity 0.6s ease; }
     .mb-deck.is-idle { opacity: 0.45; }
-    .mb-vinyl {
+    .mb-platter {
       position: relative;
       width: min(34vh, 26vw);
       aspect-ratio: 1;
+    }
+    /* Anillo de luz que late en cada beat: cian la canción que sale, rosa la que entra */
+    .mb-ring {
+      position: absolute;
+      inset: -14px;
+      border-radius: 50%;
+      border: 2px solid rgba(var(--glow), calc(0.12 + var(--beat, 0) * 0.6));
+      box-shadow: 0 0 calc(8px + var(--beat, 0) * 56px) rgba(var(--glow), calc(var(--beat, 0) * 0.55));
+      pointer-events: none;
+    }
+    .mb-deck-a { --glow: 109, 240, 255; }
+    .mb-deck-b { --glow: 255, 77, 140; }
+    /* El brazo: baja sobre el disco cuando suena y vuelve a su sitio cuando para */
+    .mb-arm {
+      position: absolute;
+      top: -6%;
+      right: -4%;
+      width: 10px;
+      height: 50%;
+      border-radius: 5px;
+      background: linear-gradient(90deg, #6a6a6a, #e4e4e4 50%, #7a7a7a);
+      box-shadow: 0 8px 18px rgba(0,0,0,0.55);
+      transform-origin: 50% 6px;
+      transform: rotate(var(--arm, 4deg));
+      transition: transform 0.9s cubic-bezier(.22,1,.36,1);
+      pointer-events: none;
+    }
+    .mb-arm::before {
+      content: "";
+      position: absolute;
+      top: -14px;
+      left: 50%;
+      width: 34px;
+      height: 34px;
+      margin-left: -17px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #bdbdbd, #2b2b2b);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    }
+    .mb-arm::after {
+      content: "";
+      position: absolute;
+      bottom: -18px;
+      left: 50%;
+      width: 18px;
+      height: 28px;
+      margin-left: -9px;
+      border-radius: 4px;
+      background: linear-gradient(#d6d6d6, #5c5c5c);
+    }
+    .mb-platter.is-current .mb-vinyl { cursor: grab; }
+    .mb-platter.is-scratch .mb-vinyl { cursor: grabbing; }
+    .mb-vinyl {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      touch-action: none;
       border-radius: 50%;
       background:
         radial-gradient(circle, transparent 31%, rgba(255,255,255,0.05) 31.5%, transparent 33%),
@@ -176,13 +260,25 @@
       background: linear-gradient(130deg, rgba(255,255,255,0.12), transparent 40%, transparent 60%, rgba(255,255,255,0.06));
       pointer-events: none;
     }
+    /* Marcas de estroboscopio en el borde: así se nota que gira */
+    .mb-vinyl::before {
+      content: "";
+      position: absolute;
+      inset: 2.5%;
+      border-radius: 50%;
+      background: repeating-conic-gradient(rgba(255,255,255,0.4) 0 1.4deg, transparent 1.4deg 7.5deg);
+      -webkit-mask-image: radial-gradient(circle, transparent 65%, #000 65.5%, #000 68%, transparent 68.5%);
+      mask-image: radial-gradient(circle, transparent 65%, #000 65.5%, #000 68%, transparent 68.5%);
+      pointer-events: none;
+    }
     .mb-label {
       position: absolute;
       inset: 30%;
       border-radius: 50%;
       background-size: cover;
       background-position: center;
-      box-shadow: 0 0 0 3px #0a0a0a;
+      box-shadow: 0 0 0 3px #0a0a0a, 0 0 calc(var(--beat, 0) * 30px) rgba(var(--glow), calc(var(--beat, 0) * 0.5));
+      scale: calc(1 + var(--beat, 0) * 0.035);
     }
     .mb-label::after {
       content: "";
@@ -231,7 +327,8 @@
     .mb-knob.is-cut i::after { background: #ff4d6d; }
     .mb-knob.is-boost i::after { background: #6df0ff; }
     .mb-meter { position: relative; width: 8px; height: 90px; border-radius: 4px; background: rgba(255,255,255,0.1); overflow: hidden; }
-    .mb-meter b { position: absolute; left: 0; right: 0; bottom: 0; height: var(--v, 0%); background: linear-gradient(0deg, #4dff9a, #ffe14d 70%, #ff4d6d); }
+    .mb-meter b { position: absolute; left: 0; right: 0; bottom: 0; height: var(--v, 0%); background: linear-gradient(0deg, #4dff9a, #ffe14d 70%, #ff4d6d); background-size: 100% 90px; background-position: bottom; }
+    .mb-meter u { position: absolute; left: 0; right: 0; bottom: var(--p, 0%); height: 2px; background: #fff; opacity: 0.85; }
     .mb-xfader { grid-column: 1 / -1; position: relative; height: 26px; margin-top: 6px; }
     .mb-xfader::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.25); }
     .mb-xfader i {
@@ -246,11 +343,32 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.6);
     }
     .mb-fxrow { grid-column: 1 / -1; display: flex; justify-content: space-between; font-size: 11px; letter-spacing: 0.08em; opacity: 0.75; }
-    .mb-timeline { position: relative; height: 54px; border-radius: 12px; background: rgba(0,0,0,0.35); overflow: hidden; }
+    .mb-scrub { position: relative; }
+    .mb-timeline { position: relative; height: 64px; border-radius: 12px; background: rgba(0,0,0,0.35); overflow: hidden; cursor: pointer; touch-action: none; }
+    .mb-timeline:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+    .mb-timeline canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .mb-scrub:hover .mb-head, .mb-scrub.is-drag .mb-head { width: 3px; }
+    .mb-tip {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 0;
+      padding: 4px 9px;
+      border-radius: 6px;
+      background: #fff;
+      color: #000;
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      opacity: 0;
+      transform: translateX(-50%);
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+    .mb-scrub:hover .mb-tip, .mb-scrub.is-drag .mb-tip { opacity: 1; }
     .mb-timeline .mb-mix { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(90deg, rgba(255,77,109,0.35) 0 2px, transparent 2px 8px); border-left: 2px solid #ff4d6d; }
     .mb-timeline .mb-played { position: absolute; top: 0; bottom: 0; left: 0; background: rgba(255,255,255,0.12); }
     .mb-timeline .mb-head { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; box-shadow: 0 0 10px #fff; }
-    .mb-timeline span { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-size: 12px; letter-spacing: 0.08em; opacity: 0.8; }
+    .mb-timeline span { position: absolute; left: 10px; top: 50%; padding: 4px 9px; border-radius: 6px; background: rgba(0,0,0,0.7); transform: translateY(-50%); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.06em; pointer-events: none; }
 
     .mb-editor {
       position: absolute;
@@ -292,7 +410,8 @@
     .mb-row output { min-width: 70px; font-variant-numeric: tabular-nums; font-size: 13px; text-align: center; }
     .mb-note { font-size: 12px; opacity: 0.65; }
     @media (prefers-reduced-motion: reduce) {
-      .mb-booth, .mb-editor { animation: none; }
+      .mb-booth, .mb-editor, .mb-backdrop, .mb-count.is-on { animation: none; }
+      .mb-arm { transition: none; }
     }
   `;
   document.head.append(style);
@@ -306,15 +425,116 @@
     return node;
   };
 
-  function buildDeck(parent) {
-    const deck = el("div", "mb-deck", parent);
-    const vinyl = el("div", "mb-vinyl", deck);
+  function buildDeck(parent, side) {
+    const deck = el("div", `mb-deck mb-deck-${side}`, parent);
+    // El plato no gira: lleva el anillo de luz y el brazo. Encima gira el disco
+    const platter = el("div", "mb-platter", deck);
+    el("div", "mb-ring", platter);
+    const vinyl = el("div", "mb-vinyl", platter);
     const label = el("div", "mb-label", vinyl);
+    el("div", "mb-arm", platter);
     const meta = el("div", "mb-meta", deck);
     const name = el("b", "", meta);
     const artist = el("span", "", meta);
     const info = el("small", "", meta);
-    return { deck, vinyl, label, name, artist, info, angle: 0 };
+    const result = { deck, platter, vinyl, label, name, artist, info, angle: 0, scratch: null, isCurrent: false };
+    enableScratch(result);
+    return result;
+  }
+
+  // Scratch: arrastrar el disco de la canción que suena la mueve hacia delante o hacia atrás. Una vuelta es un compás
+  function enableScratch(deck) {
+    const angleOf = (event) => {
+      const box = deck.vinyl.getBoundingClientRect();
+      return (Math.atan2(event.clientY - (box.top + box.height / 2), event.clientX - (box.left + box.width / 2)) * 180) / Math.PI;
+    };
+    deck.vinyl.addEventListener("pointerdown", (event) => {
+      if (!deck.isCurrent || event.button !== 0) return;
+      event.preventDefault();
+      deck.vinyl.setPointerCapture(event.pointerId);
+      deck.scratch = { last: angleOf(event), total: 0 };
+      deck.platter.classList.add("is-scratch");
+    });
+    deck.vinyl.addEventListener("pointermove", (event) => {
+      if (!deck.scratch) return;
+      const now = angleOf(event);
+      let delta = now - deck.scratch.last;
+      if (delta > 180) delta -= 360;
+      if (delta < -180) delta += 360;
+      deck.scratch.last = now;
+      deck.scratch.total += delta;
+      deck.angle += delta;
+      deck.vinyl.style.transform = `rotate(${deck.angle.toFixed(1)}deg)`;
+    });
+    const release = () => {
+      if (!deck.scratch) return;
+      const offset = (deck.scratch.total / 360) * deck.barMs;
+      deck.scratch = null;
+      deck.platter.classList.remove("is-scratch");
+      if (Math.abs(offset) > 150) seekTo(Spicetify.Player.getProgress() + offset);
+    };
+    deck.vinyl.addEventListener("pointerup", release);
+    deck.vinyl.addEventListener("pointercancel", release);
+  }
+
+  function seekTo(ms) {
+    const length = Spicetify.Player.data?.item?.duration?.milliseconds ?? Spicetify.Player.getDuration();
+    const target = Math.round(Math.min(Math.max(0, ms), Math.max(0, length - 1000)));
+    Promise.resolve(P.PlayerAPI?.seekTo ? P.PlayerAPI.seekTo(target) : Spicetify.Player.seek(target)).catch(() => {});
+  }
+
+  // ---------- Análisis de audio ----------
+  // Los beats y el volumen de cada momento de la canción, si Spotify los da. Sin ellos se usa el BPM
+  const analysisCache = new Map();
+
+  function analysisOf(uri) {
+    if (!uri || typeof Spicetify.getAudioData !== "function") return null;
+    if (!analysisCache.has(uri)) {
+      analysisCache.set(uri, null);
+      if (analysisCache.size > 8) analysisCache.delete(analysisCache.keys().next().value);
+      Promise.resolve(Spicetify.getAudioData(uri)).then((data) => {
+        if (!data?.segments?.length && !data?.beats?.length) return;
+        analysisCache.set(uri, {
+          beats: (data.beats ?? []).map((beat) => beat.start * 1000),
+          segments: (data.segments ?? []).map((segment) => ({ at: segment.start * 1000, loud: segment.loudness_max })),
+        });
+      }).catch(() => {});
+    }
+    return analysisCache.get(uri);
+  }
+
+  const lastAtOrBefore = (list, value, read = (x) => x) => {
+    let low = 0, high = list.length - 1, found = -1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (read(list[mid]) <= value) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return found;
+  };
+
+  function beatPhase(analysis, position, bpm, anchor) {
+    const beats = analysis?.beats;
+    if (beats?.length > 4) {
+      const i = lastAtOrBefore(beats, position);
+      if (i >= 0 && i < beats.length - 1) return (position - beats[i]) / (beats[i + 1] - beats[i]);
+    }
+    const beatMs = 60000 / (bpm || 120);
+    return ((((position - anchor) % beatMs) + beatMs) % beatMs) / beatMs;
+  }
+
+  // De decibelios a un nivel de 0 a 1 para los medidores
+  const levelOf = (loud) => Math.min(1, Math.max(0, (loud + 40) / 40));
+
+  function loudnessAt(analysis, position) {
+    const segments = analysis?.segments;
+    if (!segments?.length) return null;
+    const i = lastAtOrBefore(segments, position, (segment) => segment.at);
+    return i < 0 ? null : levelOf(segments[i].loud);
   }
 
   function buildKnob(parent, text) {
@@ -329,7 +549,8 @@
     const knobs = { high: buildKnob(channel, "HIGH"), mid: buildKnob(channel, "MID"), low: buildKnob(channel, "LOW"), cutoff: buildKnob(channel, "FILTER") };
     const meter = el("div", "mb-meter", channel);
     const level = el("b", "", meter);
-    return { knobs, level };
+    const peakMark = el("u", "", meter);
+    return { knobs, level, peakMark, peak: 0 };
   }
 
   let booth = null;
@@ -341,6 +562,9 @@
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-label", "Mix Booth");
     const backdrop = el("div", "mb-backdrop", root);
+    const backdropB = el("div", "mb-backdrop mb-backdrop-b", root);
+    const count = el("div", "mb-count", root);
+    count.setAttribute("aria-hidden", "true");
     const top = el("div", "mb-top", root);
     el("h1", "", top).textContent = "Mix Booth";
     const status = el("span", "mb-status", top);
@@ -351,9 +575,9 @@
     close.setAttribute("aria-label", "Close Mix Booth");
 
     const stage = el("div", "mb-stage", root);
-    const deckA = buildDeck(stage);
+    const deckA = buildDeck(stage, "a");
     const mixer = el("div", "mb-mixer", stage);
-    const deckB = buildDeck(stage);
+    const deckB = buildDeck(stage, "b");
     const channelA = buildChannel(mixer);
     const channelB = buildChannel(mixer);
     const xfader = el("div", "mb-xfader", mixer);
@@ -362,13 +586,62 @@
     const fxA = el("span", "", fxRow);
     const fxB = el("span", "", fxRow);
 
-    const timeline = el("div", "mb-timeline", root);
+    // La barra de la canción que suena: su onda, la zona de la mezcla, y se puede tocar para moverse
+    const scrub = el("div", "mb-scrub", root);
+    const timeline = el("div", "mb-timeline", scrub);
+    timeline.tabIndex = 0;
+    timeline.setAttribute("role", "slider");
+    timeline.setAttribute("aria-label", "Song position");
+    timeline.setAttribute("aria-valuemin", "0");
+    const wave = el("canvas", "", timeline);
     const played = el("div", "mb-played", timeline);
     const mixZone = el("div", "mb-mix", timeline);
     const head = el("div", "mb-head", timeline);
     const timeText = el("span", "", timeline);
+    const tip = el("div", "mb-tip", scrub);
+    tip.setAttribute("aria-hidden", "true");
 
-    booth = { root, backdrop, status, edit, deckA, deckB, channelA, channelB, knob, fxA, fxB, played, mixZone, head, timeText, last: performance.now() };
+    booth = { root, backdrop, backdropB, count, status, edit, deckA, deckB, channelA, channelB, knob, fxA, fxB, timeline, wave, played, mixZone, head, timeText, tip, drag: null, waveKey: null, lastCount: null, last: performance.now() };
+
+    const msAt = (event) => {
+      const box = timeline.getBoundingClientRect();
+      return Math.min(1, Math.max(0, (event.clientX - box.left) / box.width)) * (booth.timelineLength || 0);
+    };
+    const showTip = (event, ms) => {
+      const box = timeline.getBoundingClientRect();
+      booth.tip.style.left = `${Math.min(box.width, Math.max(0, event.clientX - box.left))}px`;
+      setText(booth.tip, time(ms));
+    };
+    timeline.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      timeline.setPointerCapture(event.pointerId);
+      booth.drag = msAt(event);
+      timeline.parentElement.classList.add("is-drag");
+      showTip(event, booth.drag);
+    });
+    timeline.addEventListener("pointermove", (event) => {
+      const ms = msAt(event);
+      if (booth.drag !== null) booth.drag = ms;
+      showTip(event, ms);
+    });
+    const endDrag = () => {
+      if (booth?.drag === null || !booth) return;
+      seekTo(booth.drag);
+      // La barra se queda donde la soltaste hasta que Spotify confirme la nueva posición
+      booth.dragUntil = performance.now() + 700;
+      booth.dragHold = booth.drag;
+      booth.drag = null;
+      timeline.parentElement.classList.remove("is-drag");
+    };
+    timeline.addEventListener("pointerup", endDrag);
+    timeline.addEventListener("pointercancel", endDrag);
+    timeline.addEventListener("keydown", (event) => {
+      const step = event.shiftKey ? 15000 : 5000;
+      if (event.key === "ArrowRight") seekTo(Spicetify.Player.getProgress() + step);
+      else if (event.key === "ArrowLeft") seekTo(Spicetify.Player.getProgress() - step);
+      else return;
+      event.preventDefault();
+    });
     close.addEventListener("click", closeBooth);
     edit.addEventListener("click", () => {
       const { a, b, context } = booth.state ?? {};
@@ -405,9 +678,15 @@
     return plans.get(key);
   }
 
+  // Cuándo cambió la canción y en qué punto entró la nueva: en una mezcla de verdad entra justo donde
+  // empieza su parte de la mezcla. Si la pusiste a mano, empieza en otro sitio aunque Spotify tenga una mezcla guardada
+  let change = null;
+  const MIX_ENTRY_TOLERANCE_MS = 4000;
+
   Spicetify.Player.addEventListener("songchange", () => {
     previous = current;
     current = trackInfo(Spicetify.Player.data?.item);
+    change = { at: performance.now(), entry: null };
   });
   let current = trackInfo(Spicetify.Player.data?.item);
 
@@ -438,10 +717,15 @@
     const nextItem = Spicetify.Queue?.nextTracks?.[0]?.contextTrack;
     const next = nextItem?.uri?.startsWith("spotify:track:") ? trackInfo({ uri: nextItem.uri, metadata: nextItem.metadata, name: nextItem.metadata?.title }) : null;
     // Recién cambiada de canción puede que estemos dentro de la mezcla con la anterior
-    if (isPlaylist && previous && current && previous.uri !== current.uri && position < 90000) {
+    // La primera lectura tras el cambio dice en qué punto entró la canción
+    // Se espera un momento: justo al cambiar, Spotify aún puede dar la posición de la canción anterior
+    const sinceChange = change ? performance.now() - change.at : 0;
+    if (change && change.entry === null && sinceChange > 400) change.entry = position - sinceChange;
+    if (isPlaylist && previous && current && previous.uri !== current.uri && change && position < 90000) {
       const behind = getPlan(context, previous.uri, current.uri);
       const elapsed = behind.overlap ? position - behind.overlap.startBMs : -1;
-      if (behind.ready && behind.overlap && elapsed >= 0 && elapsed < behind.overlap.durationMs) {
+      const enteredAtMix = behind.overlap && Math.abs(change.entry - behind.overlap.startBMs) < MIX_ENTRY_TOLERANCE_MS;
+      if (behind.ready && enteredAtMix && elapsed >= 0 && elapsed < behind.overlap.durationMs) {
         return { context, a: previous, b: current, mixing: true, elapsed, position, plan: behind };
       }
     }
@@ -471,23 +755,61 @@
     knob.classList.toggle("is-boost", v > 0.55);
   }
 
-  function paintChannel(channel, side, t, volume) {
+  // El medidor: el volumen de la mezcla por lo fuerte que suena ese momento de la canción, con su pico marcado
+  function paintChannel(channel, side, t, level, dt) {
     for (const band of ["high", "mid", "low", "cutoff"]) paintKnob(channel.knobs[band], t === null ? 0.5 : curveAt(side?.[band], t));
-    setVar(channel.level, "--v", `${Math.round(volume * 100)}%`);
+    channel.peak = Math.max(level, channel.peak - dt * 0.0005);
+    setVar(channel.level, "--v", `${Math.round(level * 100)}%`);
+    setVar(channel.peakMark, "--p", `${Math.round(channel.peak * 100)}%`);
   }
 
-  function paintDeck(deck, track, bpm, spinning, dt, extra) {
+  function paintDeck(deck, track, bpm, spinning, dt, extra, phase, isCurrent) {
     deck.deck.classList.toggle("is-idle", !spinning);
+    deck.isCurrent = isCurrent;
+    deck.platter.classList.toggle("is-current", isCurrent);
+    deck.barMs = (4 * 60000) / (bpm || 120);
     setText(deck.name, track?.name ?? "—");
     setText(deck.artist, track?.artist ?? "");
-    setText(deck.info, [bpm ? `${Math.round(bpm)} BPM` : "", extra].filter(Boolean).join("  ·  "));
+    const scratching = deck.scratch ? `${deck.scratch.total >= 0 ? "+" : "−"}${(Math.abs(deck.scratch.total / 360) * deck.barMs / 1000).toFixed(1)}s` : "";
+    setText(deck.info, scratching || [bpm ? `${Math.round(bpm)} BPM` : "", extra].filter(Boolean).join("  ·  "));
     const image = track?.cover ? `url("${track.cover}")` : "none";
     if (deck.label.style.backgroundImage !== image) deck.label.style.backgroundImage = image;
+    // El brazo baja sobre el disco mientras suena
+    setVar(deck.platter, "--arm", spinning ? "24deg" : "4deg");
+    // Un golpe de luz en cada beat que se apaga hasta el siguiente
+    const beat = spinning && !REDUCED_MOTION ? Math.pow(1 - phase, 3) : 0;
+    setVar(deck.platter, "--beat", beat.toFixed(2));
     // Una vuelta por compás de cuatro tiempos
-    if (spinning && !REDUCED_MOTION) {
+    if (spinning && !REDUCED_MOTION && !deck.scratch) {
       deck.angle = (deck.angle + (dt / 1000) * (360 / ((4 * 60) / (bpm || 120)))) % 360;
       deck.vinyl.style.transform = `rotate(${deck.angle.toFixed(1)}deg)`;
     }
+  }
+
+  // La onda de la canción, dibujada una vez por canción y tamaño
+  function drawWave(analysis, length) {
+    const canvas = booth.wave;
+    const width = canvas.clientWidth, height = canvas.clientHeight;
+    const key = `${booth.timelineUri}|${width}|${!!analysis}`;
+    if (key === booth.waveKey || !width) return;
+    booth.waveKey = key;
+    const ratio = devicePixelRatio || 1;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!analysis?.segments?.length || !length) return;
+    const bars = Math.floor(width / 4);
+    const levels = new Array(bars).fill(0);
+    for (const segment of analysis.segments) {
+      const i = Math.min(bars - 1, Math.floor((segment.at / length) * bars));
+      if (i >= 0) levels[i] = Math.max(levels[i], levelOf(segment.loud));
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    levels.forEach((level, i) => {
+      const h = Math.max(2, level * (height - 12)) * ratio;
+      ctx.fillRect(i * 4 * ratio, (canvas.height - h) / 2, 2 * ratio, h);
+    });
   }
 
   function tick(now) {
@@ -506,9 +828,20 @@
 
     const volA = inMix ? curveAt(effects?.out?.volume, t) ?? 1 - t : 1;
     const volB = inMix ? curveAt(effects?.in?.volume, t) ?? t : 0;
-    paintChannel(booth.channelA, effects?.out, t, playing ? volA : 0);
-    paintChannel(booth.channelB, effects?.in, t, playing ? volB : 0);
-    setVar(booth.knob, "--x", `${Math.round((volB / Math.max(0.001, volA + volB)) * 100)}%`);
+    const lengthA = state.a?.length || Spicetify.Player.getDuration();
+    const positionA = state.mixing ? overlap.startAMs + state.elapsed * (overlap.speedA || 1) : state.position;
+    const positionB = inMix ? overlap.startBMs + state.elapsed * (overlap.speedB || 1) : overlap?.startBMs ?? 0;
+    const analysisA = analysisOf(state.a?.uri);
+    const analysisB = analysisOf(state.b?.uri);
+    const phaseA = beatPhase(analysisA, positionA, overlap?.bpmA, overlap?.startAMs ?? 0);
+    const phaseB = beatPhase(analysisB, positionB, overlap?.bpmB, overlap?.startBMs ?? 0);
+    // Sin análisis, el medidor rebota con el beat
+    const loudA = loudnessAt(analysisA, positionA) ?? 0.65 + 0.3 * Math.pow(1 - phaseA, 2);
+    const loudB = loudnessAt(analysisB, positionB) ?? 0.65 + 0.3 * Math.pow(1 - phaseB, 2);
+    paintChannel(booth.channelA, effects?.out, t, playing ? volA * loudA : 0, dt);
+    paintChannel(booth.channelB, effects?.in, t, playing && inMix ? volB * loudB : 0, dt);
+    const mixAmount = volB / Math.max(0.001, volA + volB);
+    setVar(booth.knob, "--x", `${Math.round(mixAmount * 100)}%`);
 
     const wet = (side) => {
       if (!inMix) return "";
@@ -520,30 +853,60 @@
     setText(booth.fxA, [wet(effects?.out), loopNow ? `LOOP ${loopNow.beats} BEATS` : ""].filter(Boolean).join("  ") || " ");
     setText(booth.fxB, wet(effects?.in) || " ");
 
-    const lengthA = state.a?.length || Spicetify.Player.getDuration();
-    const positionA = state.mixing ? overlap.startAMs + state.elapsed * (overlap.speedA || 1) : state.position;
-    paintDeck(booth.deckA, state.a, overlap?.bpmA, playing && (!state.mixing || volA > 0.02), dt, `−${time(lengthA - positionA)}`);
-    paintDeck(booth.deckB, state.b, overlap?.bpmB, playing && inMix && volB > 0.02, dt, overlap ? `starts at ${time(overlap.startBMs)}` : "");
+    // La canción que Spotify tiene puesta es la que se puede rayar y mover: A antes de la mezcla, B durante ella
+    paintDeck(booth.deckA, state.a, overlap?.bpmA, playing && (!state.mixing || volA > 0.02), dt, `−${time(lengthA - positionA)}`, phaseA, !state.mixing);
+    paintDeck(booth.deckB, state.b, overlap?.bpmB, playing && inMix && volB > 0.02, dt, overlap ? `starts at ${time(overlap.startBMs)}` : "", phaseB, state.mixing);
 
-    const status = inMix ? "Mixing" : overlap ? `Mix in ${time(-state.elapsed)}` : state.context ? "No mix to the next song" : "Play a playlist to mix";
+    const untilMix = !inMix && overlap ? -state.elapsed : null;
+    const status = inMix ? "Mixing" : overlap ? `Mix in ${time(untilMix)}` : state.context ? "No mix to the next song" : "Play a playlist to mix";
     setText(booth.status, status);
     booth.status.classList.toggle("is-live", inMix);
     booth.edit.disabled = !(state.context && state.a && state.b);
 
-    const cover = state.a?.cover ? `url("${state.a.cover}")` : "none";
-    if (booth.backdrop.style.backgroundImage !== cover) booth.backdrop.style.backgroundImage = cover;
+    // Cuenta atrás grande en los últimos diez segundos: cada número entra y se desvanece
+    const seconds = playing && untilMix !== null && untilMix > 0 && untilMix <= 10000 ? Math.ceil(untilMix / 1000) : null;
+    if (seconds !== booth.lastCount) {
+      booth.lastCount = seconds;
+      booth.count.classList.remove("is-on");
+      if (seconds !== null) {
+        booth.count.textContent = String(seconds);
+        void booth.count.offsetWidth;
+        booth.count.classList.add("is-on");
+      }
+    }
 
-    const fraction = (ms) => `${Math.min(100, Math.max(0, (ms / lengthA) * 100)).toFixed(2)}%`;
-    booth.played.style.width = fraction(positionA);
-    booth.head.style.left = fraction(positionA);
-    if (overlap) {
+    // El fondo pasa de los colores de una canción a los de la otra según el crossfader
+    const coverA = state.a?.cover ? `url("${state.a.cover}")` : "none";
+    const coverB = state.b?.cover ? `url("${state.b.cover}")` : "none";
+    if (booth.backdrop.style.backgroundImage !== coverA) booth.backdrop.style.backgroundImage = coverA;
+    if (booth.backdropB.style.backgroundImage !== coverB) booth.backdropB.style.backgroundImage = coverB;
+    setVar(booth.backdropB, "--o", (inMix ? mixAmount : 0).toFixed(2));
+
+    // La barra de abajo es la canción que suena en Spotify, para poder moverse por ella
+    const track = state.mixing ? state.b : state.a;
+    const length = track?.length || Spicetify.Player.getDuration();
+    booth.timelineLength = length;
+    booth.timelineUri = track?.uri;
+    drawWave(analysisOf(track?.uri), length);
+    const holding = booth.dragUntil && performance.now() < booth.dragUntil;
+    const position = booth.drag ?? (holding ? booth.dragHold : state.position);
+    const fraction = (ms) => `${Math.min(100, Math.max(0, (ms / length) * 100)).toFixed(2)}%`;
+    booth.played.style.width = fraction(position);
+    booth.head.style.left = fraction(position);
+    const zone = !overlap ? null : state.mixing
+      ? [overlap.startBMs, overlap.durationMs * (overlap.speedB || 1)]
+      : [overlap.startAMs, overlap.durationMs * (overlap.speedA || 1)];
+    if (zone) {
       booth.mixZone.style.display = "";
-      booth.mixZone.style.left = fraction(overlap.startAMs);
-      booth.mixZone.style.width = fraction(overlap.durationMs * (overlap.speedA || 1));
+      booth.mixZone.style.left = fraction(zone[0]);
+      booth.mixZone.style.width = fraction(zone[1]);
     } else {
       booth.mixZone.style.display = "none";
     }
-    setText(booth.timeText, `${time(positionA)} / ${time(lengthA)}`);
+    setText(booth.timeText, `${time(position)} / ${time(length)}`);
+    booth.timeline.setAttribute("aria-valuemax", String(Math.round(length / 1000)));
+    booth.timeline.setAttribute("aria-valuenow", String(Math.round(position / 1000)));
+    booth.timeline.setAttribute("aria-valuetext", `${time(position)} of ${time(length)}`);
   }
 
   // ---------- Editor ----------

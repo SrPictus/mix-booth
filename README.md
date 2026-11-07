@@ -8,10 +8,12 @@ A Spicetify extension that turns Spotify's mixed playlists into a DJ booth. Watc
 
 Open it with the **Mix Booth** button (two records) in the player bar.
 
-- **Two decks:** the song that's playing and the one that comes next, spinning at their real BPM
-- **A mixer that plays itself:** the EQ (high, mid, low) and filter knobs of each channel move along the transition's real curves, the level meters follow each song's volume, and the crossfader slides as the mix happens
+- **Two decks:** the song that's playing and the one that comes next, spinning at their real BPM. A light ring pulses on every beat, and each tonearm drops onto its record when that song starts playing
+- **Scratch:** drag the record that's playing to move through the song. One turn is one bar
+- **A mixer that plays itself:** the EQ (high, mid, low) and filter knobs of each channel move along the transition's real curves, the level meters bounce with how loud each moment is, and the crossfader slides as the mix happens
 - **Echo, reverb and loops** light up while they play
-- **Timeline** of the current song with the mix zone marked, and a countdown to the next mix
+- **Waveform timeline** of the song that's playing, with the mix zone marked. Click or drag it to jump anywhere, or use the arrow keys
+- **Countdown** for the last ten seconds before a mix, and a background that blends from one song's colors into the other's
 
 ## The transition editor
 
