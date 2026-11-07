@@ -1152,7 +1152,8 @@
 
   // ---------- Entradas ----------
 
-  const ICON = `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="4.5" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="4.5" cy="8" r="1"/><circle cx="11.5" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11.5" cy="8" r="1"/></svg>`;
+  // Con ancho y alto: sin ellos Spotify deja el icono a tamaño cero y el botón se ve vacío
+  const ICON = `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="4.5" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="4.5" cy="8" r="1"/><circle cx="11.5" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11.5" cy="8" r="1"/></svg>`;
   const boothButton = new Spicetify.Playbar.Button("Mix Booth", ICON, (button) => {
     if (booth) closeBooth();
     else {
