@@ -2,7 +2,7 @@
 
 A Spicetify extension that turns Spotify's mixed playlists into a DJ booth. Watch each transition happen on two spinning decks, edit how every transition sounds, and record vertical clips of your mixes.
 
-![Mix Booth](https://raw.githubusercontent.com/SrPictus/mix-booth/main/preview.png)
+![Mix Booth: vertical clips in the Aura and Kinetic styles](https://raw.githubusercontent.com/SrPictus/mix-booth/main/preview.webp)
 
 ## The booth
 
