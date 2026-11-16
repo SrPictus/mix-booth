@@ -29,6 +29,7 @@ Click **● Clip** in the booth to record a 1080×1920 video of the song or the 
 - **Real data:** the lyrics come with each word's timing (from [Spicy Lyrics](https://github.com/Spikerko/spicy-lyrics)' saved copy, or Spotify's), and the animation follows the song's real beat and the mix's real progress
 - **What to record:** the next mix (from six seconds before it to just after it ends), or 15, 30 or 60 seconds
 - **One click:** a 3-2-1 countdown, then OBS records and stops by itself. The clip is saved as an MP4 in OBS's recordings folder, and Spotify tells you where
+- **Sharp at full size:** OBS draws the clip itself at a true 1080×1920 and 60 fps (in a browser source, with the same design you see in Spotify), so it doesn't depend on how big your screen is. It records at OBS's high quality setting, about 2 MB per second, so the video still looks good after TikTok or Instagram compress it
 
 ![The clip panel](https://raw.githubusercontent.com/SrPictus/mix-booth/main/screenshots/clip-panel.png)
 
@@ -38,7 +39,7 @@ Click **● Clip** in the booth to record a 1080×1920 video of the song or the 
 2. In OBS, open **Tools → WebSocket Server Settings**, tick **Enable WebSocket server** and copy the password (**Show Connect Info**).
 3. Paste that password in the clip panel. It's saved only on your computer.
 
-Mix Booth creates its own OBS profile and scene called **Mix Clip**, so your usual profile, scenes and canvas are never changed. While recording it captures only Spotify's window and sound, and mutes your desktop audio and microphone; afterwards it switches everything back.
+Mix Booth creates its own OBS profile and scene called **Mix Clip**, so your usual profile, scenes and canvas are never changed. While recording it shows only the clip, records only Spotify's sound, and mutes your desktop audio and microphone; afterwards it switches everything back. If your OBS has no browser source, it captures Spotify's window instead (softer, since it's stretched to 1080×1920).
 
 ## The transition editor
 

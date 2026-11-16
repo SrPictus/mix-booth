@@ -92,6 +92,8 @@
     name: item.name ?? item.metadata?.title ?? "",
     artist: item.artists?.map((a) => a.name).join(", ") ?? item.metadata?.artist_name ?? "",
     cover: coverOf(item.metadata) ?? item.images?.[0]?.url ?? null,
+    // La más grande, para los clips a 1080×1920
+    big: imageUrl(item.metadata?.image_xlarge_url ?? item.metadata?.image_large_url) ?? item.images?.[0]?.url ?? null,
     small: smallCoverOf(item.metadata) ?? item.images?.[item.images.length - 1]?.url ?? null,
     length: item.duration?.milliseconds ?? Number(item.metadata?.duration) ?? 0,
   } : null;
@@ -1447,6 +1449,8 @@
     return found;
   }
 
+  // <clip-art> Desde aquí hasta </clip-art> es el dibujo de los clips. No depende de nada de fuera:
+  // la página que OBS dibuja a 1080×1920 copia este trozo tal cual (ver clipRendererUrl)
   const clamp01 = (v) => Math.min(1, Math.max(0, v));
   const easeOut = (x) => 1 - Math.pow(1 - clamp01(x), 3);
   const easeBack = (x) => { x = clamp01(x); const c = 1.7; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
@@ -1491,7 +1495,8 @@
     if (!words.length) return;
     const pos = song.pos;
     ctx.font = `800 ${fontPx}px Inter, ${getComputedStyle(document.body).fontFamily}`; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-    const sp = ctx.measureText(" ").width, ws = words.map((w) => ctx.measureText(w.text).width);
+    // Espacio algo más ancho de lo normal: la palabra que suena crece un 6% y si no se comería el hueco
+    const sp = ctx.measureText(" ").width * 1.7, ws = words.map((w) => ctx.measureText(w.text).width);
     const rows = [[]]; let lw = 0;
     words.forEach((w, i) => { if (lw + ws[i] > maxW && rows[rows.length - 1].length) { rows.push([]); lw = 0; } rows[rows.length - 1].push(i); lw += ws[i] + sp; });
     const out = line ? clamp01((line.end + 600 - pos) / 400) : 1;
@@ -1643,16 +1648,106 @@
     addGrain(ctx);
   }
 
+  // </clip-art>
+
   const CLIP_STYLES = {
     aura: { name: "Aura", hint: "Liquid colours, words that float in", draw: drawAura },
     kinetic: { name: "Kinetic", hint: "Giant words, a split screen on the mix", draw: drawKinetic },
   };
   const CLIP_MODES = [["mix", "Next mix"], ["15", "15 s"], ["30", "30 s"], ["60", "60 s"]];
 
+  // ----- El clip, dibujado por OBS -----
+  // Capturar la ventana daría un clip borroso: en una pantalla normal el clip mide unos 800 px de alto y OBS
+  // lo estiraría a 1920. Por eso OBS abre su propia página (una fuente de navegador) con el mismo código de
+  // dibujo, a 1080×1920 y 60 fps, y Spotify le va mandando lo que suena por el WebSocket de OBS
+  const SHA256_SOURCE = 'function sha256b64(str){const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];const b=new TextEncoder().encode(str);const l=b.length;const n=((l+9+63)>>6)<<6;const m=new Uint8Array(n);m.set(b);m[l]=0x80;const dv=new DataView(m.buffer);dv.setUint32(n-4,l*8);dv.setUint32(n-8,Math.floor(l/0x20000000));let h=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];const w=new Uint32Array(64);const r=(x,y)=>(x>>>y)|(x<<(32-y));for(let o=0;o<n;o+=64){for(let i=0;i<16;i++)w[i]=dv.getUint32(o+i*4);for(let i=16;i<64;i++){const s0=r(w[i-15],7)^r(w[i-15],18)^(w[i-15]>>>3),s1=r(w[i-2],17)^r(w[i-2],19)^(w[i-2]>>>10);w[i]=(w[i-16]+s0+w[i-7]+s1)|0;}let[a,bb,c,d,e,f,g,hh]=h;for(let i=0;i<64;i++){const S1=r(e,6)^r(e,11)^r(e,25),ch=(e&f)^(~e&g),t1=(hh+S1+ch+K[i]+w[i])|0,S0=r(a,2)^r(a,13)^r(a,22),mj=(a&bb)^(a&c)^(bb&c),t2=(S0+mj)|0;hh=g;g=f;f=e;e=(d+t1)|0;d=c;c=bb;bb=a;a=(t1+t2)|0;}h=[h[0]+a|0,h[1]+bb|0,h[2]+c|0,h[3]+d|0,h[4]+e|0,h[5]+f|0,h[6]+g|0,h[7]+hh|0];}let bin="";for(const v of h)for(let k=24;k>=0;k-=8)bin+=String.fromCharCode((v>>>k)&255);return btoa(bin);}';
+  // La página que abre OBS: una URL data: con todo dentro (no depende de ningún servidor)
+  function clipRendererUrl(password, nonce = 0) {
+    const source = mixBooth.toString();
+    const open = "// <" + "clip-art>", close = "// </" + "clip-art>";
+    const art = source.slice(source.indexOf(open), source.indexOf(close));
+    // En la página de OBS crypto.subtle no existe (no es un contexto seguro): el SHA-256 va escrito a mano
+    const runtime = `
+const CLIP_W = ${CLIP_W}, CLIP_H = ${CLIP_H};
+${art}
+const lastAtOrBefore = ${lastAtOrBefore.toString()};
+${beatPhase.toString()}
+${lineAt.toString()}
+${SHA256_SOURCE}
+const FALLBACK_PALETTE = ${JSON.stringify(FALLBACK_PALETTE)};
+const STYLES = { aura: drawAura, kinetic: drawKinetic };
+const ctx = document.getElementById("c").getContext("2d");
+const songs = new Map();
+let tick = null, tickAt = 0;
+function songAt(s, dt) {
+  if (!s) return null;
+  const info = songs.get(s.uri) || {};
+  const pos = s.pos + dt * (s.speed || 1);
+  return { title: info.title || "", artist: info.artist || "", uri: s.uri, bpm: s.bpm, img: info.img || null, pal: info.pal || FALLBACK_PALETTE,
+    pos, length: s.length || 1, line: info.lines ? lineAt(info.lines, pos) : null, hasLyrics: !!(info.lines && info.lines.length),
+    beat: Math.exp(-beatPhase(info.beats ? { beats: info.beats } : null, pos, s.bpm, s.anchor || 0) * 5) };
+}
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (!tick) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, CLIP_W, CLIP_H); return; }
+  const dt = Math.min(Date.now() - tickAt, 400);
+  const m = tick.inMix ? clamp01(tick.m + dt / tick.dur) : tick.m;
+  const a = songAt(tick.a, dt), b = songAt(tick.b, dt);
+  ctx.save(); STYLES[tick.style](ctx, { now: now / 1000, m, inMix: tick.inMix, mixing: tick.mixing, a, b, cur: m < 0.5 || !b ? a : b }); ctx.restore();
+}
+const fonts = document.fonts.ready.then(() => Promise.all(["120px Anton", "800 64px Inter", "500 38px Inter", "700 40px Inter", "600 30px Inter"].map((f) => document.fonts.load(f).catch(() => {}))));
+const pw = decodeURIComponent(location.hash.slice(1));
+let ws;
+function connect() {
+  ws = new WebSocket("ws://127.0.0.1:4455", "obswebsocket.json");
+  ws.onclose = () => setTimeout(connect, 1000);
+  ws.onmessage = async (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.op === 0) {
+      const auth = msg.d.authentication;
+      ws.send(JSON.stringify({ op: 1, d: { rpcVersion: 1, eventSubscriptions: 1, authentication: auth ? sha256b64(sha256b64(pw + auth.salt) + auth.challenge) : undefined } }));
+    } else if (msg.op === 2) {
+      await fonts;
+      ws.send(JSON.stringify({ op: 6, d: { requestType: "BroadcastCustomEvent", requestId: "ready", requestData: { eventData: { mbClip: "ready" } } } }));
+    } else if (msg.op === 5 && msg.d.eventType === "CustomEvent") {
+      const d = msg.d.eventData;
+      if (d.mbClip === "tick") { tick = d; tickAt = Date.now(); }
+      else if (d.mbClip === "song") {
+        const old = songs.get(d.uri);
+        if (old && old.cover === d.cover) d.img = old.img;
+        else if (d.cover) { const img = new Image(); img.crossOrigin = "anonymous"; img.src = d.cover; img.decode().then(() => { const s = songs.get(d.uri); if (s) s.img = img; }, () => {}); }
+        songs.set(d.uri, d);
+      }
+    }
+  };
+}
+connect();
+requestAnimationFrame(frame);`;
+    const html = `<!doctype html><!-- ${nonce} --><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@500;600;700;800&display=swap"><style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style><canvas id="c" width="${CLIP_W}" height="${CLIP_H}"></canvas><script>${runtime}<\/script>`;
+    const bytes = new TextEncoder().encode(html);
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return `data:text/html;base64,${btoa(bin)}#${encodeURIComponent(password ?? "")}`;
+  }
+  // Lo que la página de OBS necesita de cada canción (se manda al cambiar algo y cada pocos segundos por si OBS recargó)
+  function clipSongPacket(track) {
+    if (!track?.uri) return null;
+    const cover = track.big ?? track.cover;
+    return { mbClip: "song", uri: track.uri, title: track.name ?? "", artist: track.artist ?? "", cover,
+      pal: paletteOf(track.cover) ?? null, lines: lyricsOf(track.uri) ?? null, beats: analysisOf(track.uri)?.beats ?? null };
+  }
+  function clipTickPacket(style) {
+    const F = clipFrame(performance.now());
+    const ov = F.state.plan?.overlap;
+    const part = (song, speed, bpm, anchor) => song && { uri: song.uri, pos: song.pos, speed: F.inMix || F.mixing ? speed || 1 : 1, bpm: song.bpm ?? bpm, anchor, length: song.length };
+    return { mbClip: "tick", style, m: F.m, inMix: !!F.inMix, mixing: !!F.mixing, dur: ov?.durationMs || 1,
+      a: part(F.a, ov?.speedA, ov?.bpmA, ov?.startAMs ?? 0), b: part(F.b, ov?.speedB, ov?.bpmB, ov?.startBMs ?? 0), tracks: [F.state.a, F.state.b] };
+  }
+
   // ----- OBS -----
   // OBS trae de serie un control remoto (WebSocket). La extensión lo usa para preparar una escena
   // vertical propia, empezar y parar la grabación, y dejar OBS como estaba
-  const OBS = { url: "ws://127.0.0.1:4455", profile: "Mix Clip", scene: "Mix Clip", video: "Mix Clip · Spotify window", audio: "Mix Clip · Spotify audio", window: "Spotify:Chrome_WidgetWin_1:Spotify.exe" };
+  const OBS = { url: "ws://127.0.0.1:4455", profile: "Mix Clip", scene: "Mix Clip", page: "Mix Clip · Clip", video: "Mix Clip · Spotify window", audio: "Mix Clip · Spotify audio", window: "Spotify:Chrome_WidgetWin_1:Spotify.exe" };
   const sha256b64 = async (text) => btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))));
   function connectObs(password) {
     return new Promise((resolve, reject) => {
@@ -1665,6 +1760,7 @@
           return new Promise((ok, no) => { const requestId = String(++id); pending.set(requestId, { ok, no }); ws.send(JSON.stringify({ op: 6, d: { requestType, requestId, requestData } })); });
         },
         close() { try { ws.close(); } catch {} },
+        onEvent: null,
       };
       ws.onerror = () => { clearTimeout(timer); reject(new Error("OBS isn't open, or its WebSocket server is off")); };
       ws.onclose = (event) => { clearTimeout(timer); if (event.code === 4009) reject(new Error("Wrong OBS password")); for (const p of pending.values()) p.no(new Error("OBS closed the connection")); };
@@ -1672,10 +1768,12 @@
         const msg = JSON.parse(event.data);
         if (msg.op === 0) {
           const auth = msg.d.authentication;
-          const identify = { rpcVersion: 1 };
+          // Eventos generales: por ahí avisa la página del clip de que está lista
+          const identify = { rpcVersion: 1, eventSubscriptions: 1 };
           if (auth) identify.authentication = await sha256b64((await sha256b64((password ?? "") + auth.salt)) + auth.challenge);
           ws.send(JSON.stringify({ op: 1, d: identify }));
         } else if (msg.op === 2) { clearTimeout(timer); resolve(client); }
+        else if (msg.op === 5) client.onEvent?.(msg.d.eventType, msg.d.eventData);
         else if (msg.op === 7) {
           const p = pending.get(msg.d.requestId); if (!p) return; pending.delete(msg.d.requestId);
           msg.d.requestStatus?.result ? p.ok(msg.d.responseData ?? {}) : p.no(new Error(msg.d.requestStatus?.comment || msg.d.requestType + " failed"));
@@ -1695,28 +1793,56 @@
     throw new Error("OBS didn't switch profile");
   }
   // Lo que se cambia se va anotando en `undo`, para poder deshacerlo aunque la preparación falle a medias
-  async function prepareObs(obs, rect, undo) {
+  async function prepareObs(obs, rect, undo, password) {
     const profiles = await obs.request("GetProfileList");
     undo.profile = profiles.currentProfileName;
     if (!profiles.profiles.includes(OBS.profile)) await obs.request("CreateProfile", { profileName: OBS.profile });
     await switchProfile(obs, OBS.profile);
     await obs.request("SetVideoSettings", { baseWidth: CLIP_W, baseHeight: CLIP_H, outputWidth: CLIP_W, outputHeight: CLIP_H, fpsNumerator: 60, fpsDenominator: 1 });
-    for (const [parameterCategory, parameterName, parameterValue] of [["Output", "Mode", "Simple"], ["SimpleOutput", "RecFormat2", "mp4"], ["SimpleOutput", "RecQuality", "Small"]]) {
+    // Calidad alta (la que OBS llama "indistinguible"): TikTok o Instagram recomprimen, y cuanto mejor llega
+    // el original, mejor se ve después. Unos 2 MB por segundo, con el audio a 192 kbps
+    for (const [parameterCategory, parameterName, parameterValue] of [["Output", "Mode", "Simple"], ["SimpleOutput", "RecFormat2", "mp4"], ["SimpleOutput", "RecQuality", "HQ"]]) {
       try { await obs.request("SetProfileParameter", { parameterCategory, parameterName, parameterValue }); } catch {}
     }
     const scenes = await obs.request("GetSceneList");
     undo.scene = scenes.currentProgramSceneName;
     if (!scenes.scenes.some((s) => s.sceneName === OBS.scene)) await obs.request("CreateScene", { sceneName: OBS.scene });
     const inputs = (await obs.request("GetInputList")).inputs;
-    if (!inputs.some((i) => i.inputName === OBS.video)) await obs.request("CreateInput", { sceneName: OBS.scene, inputName: OBS.video, inputKind: "window_capture", inputSettings: { window: OBS.window, priority: 2, method: 2, cursor: false, client_area: true } });
     if (!inputs.some((i) => i.inputName === OBS.audio)) await obs.request("CreateInput", { sceneName: OBS.scene, inputName: OBS.audio, inputKind: "wasapi_process_output_capture", inputSettings: { window: OBS.window, priority: 2 } });
+    await obs.request("SetCurrentProgramScene", { sceneName: OBS.scene });
+    // El clip lo dibuja OBS en una página propia; si no puede (OBS sin fuente de navegador), se captura la ventana
+    const ready = new Promise((ok) => {
+      obs.onEvent = (type, data) => { if (type === "CustomEvent" && data?.mbClip === "ready") ok(true); };
+      setTimeout(() => ok(false), 10000);
+    });
+    // La marca de tiempo hace que la URL cambie siempre, y así OBS recarga la página
+    const pageSettings = { url: clipRendererUrl(password, Date.now()), width: CLIP_W, height: CLIP_H, fps_custom: true, fps: 60, reroute_audio: false, shutdown: true, restart_when_active: false };
+    let pageOk = false;
+    try {
+      if (inputs.some((i) => i.inputName === OBS.page)) await obs.request("SetInputSettings", { inputName: OBS.page, inputSettings: pageSettings });
+      else await obs.request("CreateInput", { sceneName: OBS.scene, inputName: OBS.page, inputKind: "browser_source", inputSettings: pageSettings });
+      pageOk = await ready;
+    } catch {}
+    undo.windowMode = !pageOk;
+    await showOnly(obs, pageOk ? OBS.page : OBS.video, inputs);
     // Solo suena Spotify: el audio general del escritorio y el micrófono se silencian mientras se graba
     undo.muted = [];
     for (const input of inputs.filter((i) => /wasapi_(output|input)_capture/.test(i.inputKind))) {
       try { const { inputMuted } = await obs.request("GetInputMute", { inputName: input.inputName }); if (!inputMuted) { await obs.request("SetInputMute", { inputName: input.inputName, inputMuted: true }); undo.muted.push(input.inputName); } } catch {}
     }
-    await obs.request("SetCurrentProgramScene", { sceneName: OBS.scene });
-    await fitCapture(obs, rect);
+    if (undo.windowMode) await fitCapture(obs, rect);
+  }
+  // Deja visible en la escena solo la fuente que toca (la página del clip o la captura de la ventana)
+  async function showOnly(obs, name, inputs) {
+    if (name === OBS.video && !inputs.some((i) => i.inputName === OBS.video)) {
+      await obs.request("CreateInput", { sceneName: OBS.scene, inputName: OBS.video, inputKind: "window_capture", inputSettings: { window: OBS.window, priority: 2, method: 2, cursor: false, client_area: true } });
+    }
+    for (const sourceName of [OBS.page, OBS.video]) {
+      try {
+        const { sceneItemId } = await obs.request("GetSceneItemId", { sceneName: OBS.scene, sourceName });
+        await obs.request("SetSceneItemEnabled", { sceneName: OBS.scene, sceneItemId, sceneItemEnabled: sourceName === name });
+      } catch {}
+    }
   }
   // Recorta la captura de la ventana justo al rectángulo del clip y la estira a 1080×1920
   async function fitCapture(obs, rect) {
@@ -1835,6 +1961,7 @@
     const finish = async (save) => {
       if (!clip?.alive) return;
       clip.alive = false;
+      clearInterval(clip.feed);
       cancelAnimationFrame(raf);
       let path = null;
       if (obs) {
@@ -1861,9 +1988,30 @@
     try {
       status.textContent = "Connecting to OBS…";
       obs = await connectObs(password);
+      // A la página que dibuja el clip en OBS se le manda lo que suena 20 veces por segundo; ella anima entre medias.
+      // Lo de cada canción (letra, colores, beats) solo cuando cambia, y cada 3 s por si la página recargó
+      const sentSongs = new Map();
+      let lastFull = 0;
+      const feed = () => {
+        if (!clip?.alive || !obs) return;
+        const tick = clipTickPacket(style);
+        const tracks = tick.tracks; delete tick.tracks;
+        const now = performance.now(), full = now - lastFull > 3000;
+        if (full) lastFull = now;
+        for (const track of tracks) {
+          const packet = clipSongPacket(track);
+          if (!packet) continue;
+          const sig = `${packet.cover}|${!!packet.pal}|${packet.lines?.length ?? -1}|${packet.beats?.length ?? -1}`;
+          if (!full && sentSongs.get(packet.uri) === sig) continue;
+          sentSongs.set(packet.uri, sig);
+          obs.request("BroadcastCustomEvent", { eventData: packet }).catch(() => {});
+        }
+        obs.request("BroadcastCustomEvent", { eventData: tick }).catch(() => {});
+      };
+      clip.feed = setInterval(feed, 50);
       status.textContent = "Preparing the vertical scene…";
       await pause(300);
-      await prepareObs(obs, canvas.getBoundingClientRect(), undo);
+      await prepareObs(obs, canvas.getBoundingClientRect(), undo, password);
     } catch (error) {
       // Lo que se llegó a cambiar en OBS se deshace antes de avisar
       if (obs) { await restoreObs(obs, undo); obs.close(); obs = null; }
@@ -1896,7 +2044,7 @@
     for (let n = 3; n >= 1; n--) { if (!clip?.alive) return; counter.textContent = String(n); status.textContent = "Recording in"; await pause(1000); }
     try {
       // La ventana pudo moverse: se vuelve a encajar justo antes de grabar
-      await fitCapture(obs, canvas.getBoundingClientRect());
+      if (undo.windowMode) await fitCapture(obs, canvas.getBoundingClientRect());
       // OBS contesta "ok" enseguida pero tarda en grabar de verdad (y justo tras cambiar de perfil a veces no arranca):
       // se comprueba que esté grabando y, si no, se le vuelve a pedir
       let active = false;
