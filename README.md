@@ -1,6 +1,6 @@
 # Mix Booth
 
-A Spicetify extension that turns Spotify's mixed playlists into a DJ booth. Watch each transition happen on two spinning decks, and edit how every transition sounds.
+A Spicetify extension that turns Spotify's mixed playlists into a DJ booth. Watch each transition happen on two spinning decks, edit how every transition sounds, and record vertical clips of your mixes.
 
 ![Mix Booth](https://raw.githubusercontent.com/SrPictus/mix-booth/main/preview.png)
 
@@ -17,6 +17,29 @@ Open it with the **Mix Booth** button (two records) in the player bar.
 - **Waveform timeline** of the song that's playing, with the mix zone marked. Click or drag it to jump anywhere, or use the arrow keys
 - **Countdown** for the last ten seconds before a mix, and a background that blends from one song's colors into the other's
 
+## Vertical clips
+
+Click **● Clip** in the booth to record a 1080×1920 video of the song or the mix, ready for TikTok, Reels or Shorts. [OBS Studio](https://obsproject.com) does the recording, with Spotify's own sound.
+
+![Two clip styles: Aura and Kinetic](https://raw.githubusercontent.com/SrPictus/mix-booth/main/screenshots/clips.png)
+
+- **Two styles**, each with a live preview, and you pick one every time you record:
+  - **Aura:** a liquid gradient made from the cover's colours, the cover floating above it, and the lyrics coming in word by word out of a blur. On the mix, a wave rises from the bottom in the new song's colours
+  - **Kinetic:** the word being sung fills the screen, each one arriving with its own motion. On the mix, a glitch cuts from one song to the other
+- **Real data:** the lyrics come with each word's timing (from [Spicy Lyrics](https://github.com/Spikerko/spicy-lyrics)' saved copy, or Spotify's), and the animation follows the song's real beat and the mix's real progress
+- **What to record:** the next mix (from six seconds before it to just after it ends), or 15, 30 or 60 seconds
+- **One click:** a 3-2-1 countdown, then OBS records and stops by itself. The clip is saved as an MP4 in OBS's recordings folder, and Spotify tells you where
+
+![The clip panel](https://raw.githubusercontent.com/SrPictus/mix-booth/main/screenshots/clip-panel.png)
+
+### Setting up OBS once
+
+1. Install [OBS Studio](https://obsproject.com) (version 28 or newer) and open it. It can stay minimised.
+2. In OBS, open **Tools → WebSocket Server Settings**, tick **Enable WebSocket server** and copy the password (**Show Connect Info**).
+3. Paste that password in the clip panel. It's saved only on your computer.
+
+Mix Booth creates its own OBS profile and scene called **Mix Clip**, so your usual profile, scenes and canvas are never changed. While recording it captures only Spotify's window and sound, and mutes your desktop audio and microphone; afterwards it switches everything back.
+
 ## The transition editor
 
 Click **Edit transition** in the booth, or right-click a song in a playlist and choose **Edit transition to next song**.
@@ -32,6 +55,7 @@ Click **Edit transition** in the booth, or right-click a song in a playlist and 
 
 - [Spicetify](https://spicetify.app)
 - A Spotify version with mixed playlists (the **Mix** button on your playlists)
+- For clips: [OBS Studio](https://obsproject.com) 28 or newer, on Windows (it uses OBS's per-app audio capture)
 
 It works with any theme. It also pairs with [Mix Lyrics](https://github.com/SrPictus/mix-lyrics), which shows both songs' lyrics during a mix, and with the [Vitral](https://github.com/SrPictus/vitral) theme. Neither is required.
 
@@ -88,7 +112,9 @@ spicetify apply
 - It uses Spotify's internal mixing functions, so a Spotify update can break it.
 - The booth shows the transition Spotify will play; it doesn't change the sound by itself. Only **Save to playlist** changes anything.
 - Style names are numbers, because Spotify doesn't give them names. The drawing on each card shows what it does.
-- Tested on Windows with Spotify 1.3.8.
+- Clips sound as loud as Spotify is playing: if Spotify is muted, the recording waits until you turn it up.
+- Clips include the song's audio. Platforms like TikTok or Instagram may mute a video with copyrighted music; if that happens, add the song from the app's own music library instead.
+- Tested on Windows with Spotify 1.3.9 and OBS 32.
 
 ## License
 
