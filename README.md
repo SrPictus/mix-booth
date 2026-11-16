@@ -24,8 +24,8 @@ Click **● Clip** in the booth to record a 1080×1920 video of the song or the 
 ![Two clip styles: Aura and Kinetic](https://raw.githubusercontent.com/SrPictus/mix-booth/main/screenshots/clips.png)
 
 - **Two styles**, each with a live preview, and you pick one every time you record:
-  - **Aura:** a liquid gradient made from the cover's colours, the cover floating above it, and the lyrics coming in word by word out of a blur. On the mix, a wave rises from the bottom in the new song's colours
-  - **Kinetic:** the word being sung fills the screen, each one arriving with its own motion. On the mix, a glitch cuts from one song to the other
+  - **Aura:** a liquid gradient made from the cover's colours, the cover floating above it, and the lyrics coming in word by word out of a blur. On the mix, the screen splits along a liquid wave: the outgoing song stays on top and the incoming one rises from the bottom, each with its own cover, colours and lyrics at the same time
+  - **Kinetic:** the word being sung fills the screen, each one arriving with its own motion. On the mix, the screen splits in two and both songs sing at once, each half with its own giant word, and the line between them glitches on every beat
 - **Real data:** the lyrics come with each word's timing (from [Spicy Lyrics](https://github.com/Spikerko/spicy-lyrics)' saved copy, or Spotify's), and the animation follows the song's real beat and the mix's real progress
 - **What to record:** the next mix (from six seconds before it to just after it ends), or 15, 30 or 60 seconds
 - **One click:** a 3-2-1 countdown, then OBS records and stops by itself. The clip is saved as an MP4 in OBS's recordings folder, and Spotify tells you where

@@ -158,6 +158,9 @@
     /* Con la cabina abierta no se ve nada de Spotify: el navegador deja de dibujarlo. Así, al cambiar de canción,
        la letra del panel y el resto de la página no frenan la cabina. Todo sigue funcionando debajo */
     html.mb-open #main { content-visibility: hidden; }
+    /* Además se saca del layout lo que la cabina tapa: al cambiar de canción Spotify mide el título, la vista
+       central y el panel de letra, y cada medida obligaba a recalcular la página entera (un tirón de ~300 ms) */
+    html.mb-open .Root__top-container > * { display: none !important; }
     .mb-backdrop {
       position: absolute;
       top: -10%;
@@ -682,9 +685,13 @@
   let booth = null;
   let frame = 0;
 
+  let savedScroll = [];
   function openBooth() {
     if (booth) return;
     const root = el("div", "mb-booth", document.body);
+    // Lo oculto pierde su scroll; se apunta para devolverlo al cerrar
+    savedScroll = [...document.querySelectorAll(".Root__top-container [data-overlayscrollbars-viewport], .Root__top-container [class*='scroll-node'], .Root__top-container [class*='Scroll']")]
+      .filter((node) => node.scrollTop > 0).map((node) => [node, node.scrollTop]);
     document.documentElement.classList.add("mb-open");
     root.setAttribute("role", "dialog");
     root.setAttribute("aria-label", "Mix Booth");
@@ -794,6 +801,8 @@
     if (!booth) return;
     cancelAnimationFrame(frame);
     document.documentElement.classList.remove("mb-open");
+    for (const [node, top] of savedScroll) if (node.isConnected) node.scrollTop = top;
+    savedScroll = [];
     booth.waveObserver?.disconnect();
     booth.root.remove();
     booth = null;
@@ -861,15 +870,19 @@
     if (change && change.entry === null && sinceChange > 400) change.entry = position - sinceChange;
     if (isPlaylist && previous && current && previous.uri !== current.uri && change && position < 90000) {
       const behind = getPlan(context, previous.uri, current.uri);
-      const elapsed = behind.overlap ? position - behind.overlap.startBMs : -1;
-      const enteredAtMix = behind.overlap && Math.abs(change.entry - behind.overlap.startBMs) < MIX_ENTRY_TOLERANCE_MS;
+      // elapsed es tiempo real desde que empezó la mezcla; durante ella Spotify acelera o frena cada
+      // canción para cuadrar el tempo (speedA/speedB), así que la posición de la canción va a otro ritmo
+      const elapsed = behind.overlap ? (position - behind.overlap.startBMs) / (behind.overlap.speedB || 1) : -1;
+      // Mientras aún no se sabe dónde entró (los primeros 400 ms), se da por buena la mezcla si la posición
+      // cae dentro de ella: si no, durante ese instante parecería que la mezcla ya terminó
+      const enteredAtMix = behind.overlap && (change.entry === null || Math.abs(change.entry - behind.overlap.startBMs) < MIX_ENTRY_TOLERANCE_MS);
       if (behind.ready && enteredAtMix && elapsed >= 0 && elapsed < behind.overlap.durationMs) {
         return { context, a: previous, b: current, mixing: true, elapsed, position, plan: behind };
       }
     }
     const ahead = isPlaylist && current && next ? getPlan(context, current.uri, next.uri) : null;
     const usable = ahead?.ready && ahead.overlap ? ahead : null;
-    return { context: isPlaylist ? context : null, a: current, b: next, mixing: false, elapsed: usable ? position - usable.overlap.startAMs : null, position, plan: usable };
+    return { context: isPlaylist ? context : null, a: current, b: next, mixing: false, elapsed: usable ? (position - usable.overlap.startAMs) / (usable.overlap.speedA || 1) : null, position, plan: usable };
   }
 
   // ---------- Pintar ----------
@@ -1438,6 +1451,9 @@
   const easeOut = (x) => 1 - Math.pow(1 - clamp01(x), 3);
   const easeBack = (x) => { x = clamp01(x); const c = 1.7; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
   const smoothStep = (x) => { x = clamp01(x); return x * x * (3 - 2 * x); };
+  // Dónde está la frontera entre las dos canciones durante la mezcla: entra rápido hasta la mitad,
+  // las dos comparten pantalla casi toda la mezcla, y al final la nueva se queda con todo
+  const splitLevel = (m) => Math.round(CLIP_H * (1 - 0.5 * smoothStep(m / 0.18) - 0.5 * smoothStep((m - 0.82) / 0.18)));
   const rgba = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
   const mixColor = (p, q, m) => p.map((v, i) => Math.round(v + (q[i] - v) * m));
   const rr = (ctx, x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); };
@@ -1499,25 +1515,47 @@
       }
     });
   }
+  // Una canción dentro de una franja de la pantalla: portada, título y letra escalados a su alto.
+  // Con la franja entera queda igual que el diseño de una sola canción
+  function auraRegion(ctx, song, y0, y1, t) {
+    const h = y1 - y0, k = h / CLIP_H;
+    if (h < 60) return;
+    floatingCover(ctx, song.img, CLIP_W / 2, y0 + h * 0.365, 620 * k, t, song.beat, 1);
+    const titleY = y0 + h * 0.6;
+    ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.globalAlpha = 1;
+    fitText(ctx, song.title, 900, Math.round(Math.max(34, 64 * k)), "800", "Inter"); ctx.fillText(song.title, CLIP_W / 2, titleY);
+    ctx.globalAlpha = 0.75; ctx.font = `500 ${Math.round(Math.max(24, 38 * k))}px Inter`; ctx.fillText(song.artist, CLIP_W / 2, titleY + Math.max(34, 55 * k)); ctx.globalAlpha = 1;
+    auraWords(ctx, song, CLIP_W / 2, y0 + h * 0.74, Math.round(Math.max(56, 84 * k)), 920);
+  }
+  const waveY = (x, level, t, m) => level + Math.sin(x / 140 + t * 3) * 30 * Math.sin(m * Math.PI) + Math.sin(x / 60 - t * 5) * 8 * Math.sin(m * Math.PI);
+  function wavePath(ctx, level, t, m, toBottom) {
+    ctx.beginPath();
+    ctx.moveTo(0, toBottom ? CLIP_H : 0);
+    for (let x = 0; x <= CLIP_W; x += 20) ctx.lineTo(x, waveY(x, level, t, m));
+    ctx.lineTo(CLIP_W, toBottom ? CLIP_H : 0); ctx.closePath();
+  }
   function drawAura(ctx, F) {
     const { m, a, b, cur, now: t } = F;
-    const beat = cur.beat;
-    auraField(ctx, a.pal, t, 1, beat);
-    // Ola líquida que sube y tiñe con los colores de la canción nueva
-    if (b && m > 0) {
-      ctx.save(); ctx.beginPath(); const level = CLIP_H * (1 - m * 1.15);
-      ctx.moveTo(0, CLIP_H);
-      for (let x = 0; x <= CLIP_W; x += 20) ctx.lineTo(x, level + Math.sin(x / 140 + t * 3) * 45 * Math.sin(m * Math.PI) + Math.sin(x / 60 - t * 5) * 12);
-      ctx.lineTo(CLIP_W, CLIP_H); ctx.closePath(); ctx.clip(); auraField(ctx, b.pal, t + 4, 1, beat); ctx.restore();
-    }
+    // Durante la mezcla las dos canciones comparten la pantalla: la que sale arriba, la que entra abajo.
+    // La ola líquida es la frontera y sube según avanza la mezcla
+    const both = !!(b && F.inMix);
+    const level = both ? splitLevel(m) : CLIP_H;
+    auraField(ctx, a.pal, t, 1, a.beat);
+    if (both) { ctx.save(); wavePath(ctx, level, t, m, true); ctx.clip(); auraField(ctx, b.pal, t + 4, 1, b.beat); ctx.restore(); }
     ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.fillRect(0, 0, CLIP_W, CLIP_H);
-    const cy = 700;
-    if (m < 1) floatingCover(ctx, a.img, CLIP_W / 2, cy - m * 260, 620 * (1 - m * 0.25), t, beat, 1 - m, m * 18);
-    if (b && m > 0) floatingCover(ctx, b.img, CLIP_W / 2, cy + (1 - easeOut(m)) * 900, 620, t, beat, 1);
-    ctx.textAlign = "center"; ctx.fillStyle = "#fff";
-    fitText(ctx, cur.title, 900, 64, "800", "Inter"); ctx.fillText(cur.title, CLIP_W / 2, 1150);
-    ctx.globalAlpha = 0.75; ctx.font = "500 38px Inter"; ctx.fillText(cur.artist, CLIP_W / 2, 1205); ctx.globalAlpha = 1;
-    auraWords(ctx, cur, CLIP_W / 2, 1420, 84, 900);
+    if (!both) auraRegion(ctx, cur, 0, CLIP_H, t);
+    else {
+      // Cada mitad nunca se encoge por debajo de un tamaño legible: mientras la frontera se mueve,
+      // asoma por detrás de la ola en vez de aplastarse. La de abajo deja sitio a la barra de progreso
+      const MIN = 840, bottom = CLIP_H - 150;
+      ctx.save(); wavePath(ctx, level, t, m, false); ctx.clip(); auraRegion(ctx, a, Math.min(0, level - MIN), level, t); ctx.restore();
+      ctx.save(); wavePath(ctx, level, t, m, true); ctx.clip(); ctx.beginPath(); ctx.rect(0, 0, CLIP_W, bottom - 20); ctx.clip();
+      auraRegion(ctx, b, level, Math.max(bottom, level + MIN), t); ctx.restore();
+      // Un filo de luz marca la frontera
+      ctx.save(); ctx.beginPath(); for (let x = 0; x <= CLIP_W; x += 20) ctx.lineTo(x, waveY(x, level, t, m));
+      ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = 3; ctx.shadowColor = "#fff"; ctx.shadowBlur = 20; ctx.stroke(); ctx.restore();
+    }
+    ctx.textAlign = "center";
     ctx.fillStyle = "rgba(255,255,255,.25)"; rr(ctx, 120, 1780, 840, 6, 3); ctx.fill();
     ctx.fillStyle = "#fff"; rr(ctx, 120, 1780, 840 * clamp01(cur.pos / cur.length), 6, 3); ctx.fill();
     ctx.font = "700 24px Inter"; ctx.globalAlpha = 0.55; ctx.fillText("MIX BOOTH", CLIP_W / 2, 1850); ctx.globalAlpha = 1;
@@ -1533,29 +1571,34 @@
 
   // ----- Estilo Kinetic -----
   const MODES = ["punch", "slideL", "spin", "slideU", "stretch"];
-  function kineticWord(ctx, word, k, cx, cy, mode, beat) {
+  function kineticWord(ctx, word, k, cx, cy, mode, beat, maxSize = 420, scale = 1) {
     const text = word.toUpperCase();
-    // Cabe en 900 px incluso en el momento más ancho de su animación
-    const size = Math.min(420, fitText(ctx, text, mode === "stretch" ? 760 : 900, 420));
+    // Cabe en 900 px incluso en el momento más ancho de su animación, y no más alto que su franja
+    const size = Math.min(maxSize, fitText(ctx, text, mode === "stretch" ? 760 : 900, 420));
     ctx.save(); ctx.font = `${size}px Anton`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff";
     const ghost = (dx, dy, alpha, sc = 1, rot = 0) => { ctx.save(); ctx.globalAlpha = alpha; ctx.translate(cx + dx, cy + dy); ctx.rotate(rot); ctx.scale(sc, sc); ctx.fillText(text, 0, 0); ctx.restore(); };
     if (mode === "punch") ghost(0, 0, clamp01(k * 3), (1.5 - 0.5 * easeBack(k)) * (1 + beat * 0.04));
     else if (mode === "slideL") { const x = (1 - easeOut(k)) * -900; for (let g = 4; g >= 1; g--) ghost(x - g * 60 * (1 - k), 0, 0.12 * (1 - k)); ghost(x, 0, 1); }
     else if (mode === "spin") ghost(0, 0, clamp01(k * 2), 0.6 + 0.4 * easeBack(k), (1 - easeBack(k)) * -0.9);
-    else if (mode === "slideU") { const y = (1 - easeOut(k)) * 700; for (let g = 3; g >= 1; g--) ghost(0, y + g * 50 * (1 - k), 0.15 * (1 - k)); ghost(0, y, 1); }
+    else if (mode === "slideU") { const y = (1 - easeOut(k)) * 700 * scale; for (let g = 3; g >= 1; g--) ghost(0, y + g * 50 * scale * (1 - k), 0.15 * (1 - k)); ghost(0, y, 1); }
     else { ctx.save(); ctx.translate(cx, cy); ctx.scale(1 + (1 - easeBack(k)) * 0.3, 0.4 + 0.6 * easeBack(k)); ctx.fillText(text, 0, 0); ctx.restore(); }
     ctx.restore();
   }
   let glitchSnap = null;
-  function drawKineticScene(ctx, song, t) {
+  // Una canción dentro de una franja; con la franja entera es el diseño de una sola canción
+  // [y0, y1] es donde se coloca todo; [top, bot] es la parte visible (la franja puede asomar recortada)
+  function drawKineticScene(ctx, song, t, y0 = 0, y1 = CLIP_H, top = y0, bot = y1) {
     const pal = song.pal, beat = song.beat;
-    ctx.fillStyle = rgba(mixColor(pal.c[0], [10, 10, 14], 0.15)); ctx.fillRect(0, 0, CLIP_W, CLIP_H);
+    const h = y1 - y0, sk = h / CLIP_H, cy = y0 + h * 0.51;
+    if (bot - top < 4) return;
+    ctx.save(); ctx.beginPath(); ctx.rect(0, top, CLIP_W, bot - top); ctx.clip();
+    ctx.fillStyle = rgba(mixColor(pal.c[0], [10, 10, 14], 0.15)); ctx.fillRect(0, top, CLIP_W, bot - top);
     ctx.save(); ctx.globalAlpha = 0.22; ctx.fillStyle = rgba(pal.c[1]);
-    for (let i = 0; i < 7; i++) { const x = ((i * 220 + t * 180) % (CLIP_W + 400)) - 200; ctx.fillRect(x, 0, 60, CLIP_H); }
+    for (let i = 0; i < 7; i++) { const x = ((i * 220 + t * 180) % (CLIP_W + 400)) - 200; ctx.fillRect(x, top, 60, bot - top); }
     ctx.restore();
-    const r = 330 + beat * 26;
-    if (song.img) { ctx.save(); ctx.beginPath(); ctx.arc(CLIP_W / 2, 980, r, 0, 7); ctx.clip(); ctx.drawImage(song.img, CLIP_W / 2 - 360, 980 - 360, 720, 720); ctx.restore(); }
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(CLIP_W / 2, 980, r + 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ((t % 4) / 4)); ctx.stroke();
+    const r = Math.max(110, 330 * sk) + beat * 26 * Math.max(sk, 0.5), img = Math.max(240, 720 * sk);
+    if (song.img) { ctx.save(); ctx.beginPath(); ctx.arc(CLIP_W / 2, cy, r, 0, 7); ctx.clip(); ctx.drawImage(song.img, CLIP_W / 2 - img / 2, cy - img / 2, img, img); ctx.restore(); }
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(CLIP_W / 2, cy, r + 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ((t % 4) / 4)); ctx.stroke();
     // La palabra que suena, gigante, con su animación de entrada
     const line = song.line;
     let word = null, k = 1, mode = "punch";
@@ -1563,32 +1606,46 @@
       let wi = -1; line.words.forEach((w, i) => { if (song.pos >= w.start - 60) wi = i; });
       if (wi >= 0) { const w = line.words[wi]; word = w.text; k = clamp01((song.pos - w.start + 60) / 320); mode = MODES[(Math.round(line.start / 997) + wi) % MODES.length]; }
     } else if (!song.hasLyrics) { const words = song.title.split(" "); const i = Math.floor(t / 0.9) % words.length; word = words[i]; k = clamp01((t % 0.9) / 0.32); mode = MODES[i % MODES.length]; }
-    if (word) { ctx.globalCompositeOperation = "difference"; kineticWord(ctx, word, k, CLIP_W / 2, 980, mode, beat); ctx.globalCompositeOperation = "source-over"; }
+    if (word) { ctx.globalCompositeOperation = "difference"; kineticWord(ctx, word, k, CLIP_W / 2, cy, mode, beat, Math.max(150, h * 0.42), sk); ctx.globalCompositeOperation = "source-over"; }
     ctx.textAlign = "left"; ctx.fillStyle = "#fff";
-    ctx.globalAlpha = 0.9; fitText(ctx, song.title, 900, 34, "800", "Inter"); ctx.fillText(song.title, 70, 140);
-    ctx.globalAlpha = 0.65; ctx.font = "600 30px Inter"; ctx.fillText(song.artist + (song.bpm ? ` — ${song.bpm} BPM` : ""), 70, 186); ctx.globalAlpha = 1;
-    if (line) { ctx.textAlign = "center"; ctx.globalAlpha = 0.85; fitText(ctx, line.words.map((w) => w.text).join(" ").toUpperCase(), 940, 40, "700", "Inter"); ctx.fillText(line.words.map((w) => w.text).join(" ").toUpperCase(), CLIP_W / 2, 1600); ctx.globalAlpha = 1; }
-    ctx.textAlign = "center"; ctx.font = "800 24px Inter"; ctx.globalAlpha = 0.5; ctx.fillText("MIX BOOTH", CLIP_W / 2, 1850); ctx.globalAlpha = 1;
+    const titleY = y0 + Math.max(64, 140 * sk);
+    ctx.globalAlpha = 0.9; fitText(ctx, song.title, 900, Math.round(Math.max(28, 34 * sk)), "800", "Inter"); ctx.fillText(song.title, 70, titleY);
+    ctx.globalAlpha = 0.65; ctx.font = `600 ${Math.round(Math.max(22, 30 * sk))}px Inter`; ctx.fillText(song.artist + (song.bpm ? ` — ${song.bpm} BPM` : ""), 70, titleY + Math.max(34, 46 * sk)); ctx.globalAlpha = 1;
+    if (line) { const text = line.words.map((w) => w.text).join(" ").toUpperCase(); ctx.textAlign = "center"; ctx.globalAlpha = 0.85; fitText(ctx, text, 940, Math.round(Math.max(26, 40 * sk)), "700", "Inter"); ctx.fillText(text, CLIP_W / 2, y0 + h * 0.86); ctx.globalAlpha = 1; }
+    ctx.restore();
   }
   function drawKinetic(ctx, F) {
-    const { m, a, b, now: t } = F;
-    drawKineticScene(ctx, m < 0.5 || !b ? a : b, t);
-    // En la mitad de la mezcla, un corte glitch salta de una canción a la otra
-    const glitch = b && F.inMix ? clamp01(1 - Math.abs(m - 0.5) / 0.07) : 0;
-    if (glitch > 0) {
-      glitchSnap ??= document.createElement("canvas");
-      glitchSnap.width = CLIP_W; glitchSnap.height = CLIP_H; glitchSnap.getContext("2d").drawImage(ctx.canvas, 0, 0);
-      const seed = Math.floor(t * 30);
-      for (let i = 0; i < 14; i++) { const y = ((seed * 97 + i * 151) % 19) * 100, h = 40 + ((seed + i * 7) % 5) * 30, dx = (((seed * 13 + i * 31) % 21) - 10) * 18 * glitch; ctx.drawImage(glitchSnap, 0, y, CLIP_W, h, dx, y, CLIP_W, h); }
-      ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.5 * glitch; ctx.drawImage(glitchSnap, 14 * glitch, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = `rgba(255,255,255,${0.25 * glitch})`; ctx.fillRect(0, 0, CLIP_W, CLIP_H);
+    const { m, a, b, cur, now: t } = F;
+    // Durante la mezcla la pantalla se parte: la canción que sale arriba y la que entra abajo, cada una
+    // con su palabra al ritmo de su letra. La frontera sube según avanza la mezcla y salta con cada beat
+    const both = !!(b && F.inMix);
+    if (!both) drawKineticScene(ctx, cur, t);
+    else {
+      const level = splitLevel(m);
+      const MIN = 860;
+      drawKineticScene(ctx, a, t, Math.min(0, level - MIN), level, 0, level);
+      drawKineticScene(ctx, b, t, level, Math.max(CLIP_H, level + MIN), level, CLIP_H);
+      // Glitch en la frontera: franjas desplazadas y separación de colores en cada golpe
+      const hit = Math.max(a.beat, b.beat);
+      // Se crea una vez; cambiarle el tamaño en cada cuadro reservaría 8 MB nuevos cada vez
+      if (!glitchSnap) { glitchSnap = document.createElement("canvas"); glitchSnap.width = CLIP_W; glitchSnap.height = CLIP_H; }
+      const snap = glitchSnap.getContext("2d"); snap.clearRect(0, 0, CLIP_W, CLIP_H); snap.drawImage(ctx.canvas, 0, 0);
+      const seed = Math.floor(t * 24);
+      for (let i = 0; i < 6; i++) {
+        // Pegado a la línea, sin llegar al título de la canción de abajo
+        const y = level - 34 + ((seed * 53 + i * 37) % 50), hh = 6 + ((seed + i * 5) % 4) * 5, dx = (((seed * 13 + i * 31) % 21) - 10) * 9 * hit;
+        ctx.drawImage(glitchSnap, 0, y, CLIP_W, hh, dx, y, CLIP_W, hh);
+      }
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 0.25 * hit; ctx.drawImage(glitchSnap, 0, level - 30, CLIP_W, 54, 14 * hit, level - 30, CLIP_W, 54); ctx.restore();
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, level - 3, CLIP_W, 6);
     }
+    ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = "800 24px Inter"; ctx.globalAlpha = 0.5; ctx.fillText("MIX BOOTH", CLIP_W / 2, 1850); ctx.globalAlpha = 1;
     addGrain(ctx);
   }
 
   const CLIP_STYLES = {
     aura: { name: "Aura", hint: "Liquid colours, words that float in", draw: drawAura },
-    kinetic: { name: "Kinetic", hint: "Giant words, a glitch on the mix", draw: drawKinetic },
+    kinetic: { name: "Kinetic", hint: "Giant words, a split screen on the mix", draw: drawKinetic },
   };
   const CLIP_MODES = [["mix", "Next mix"], ["15", "15 s"], ["30", "30 s"], ["60", "60 s"]];
 
@@ -1863,7 +1920,9 @@
         const inMix = s.mixing || (s.plan?.overlap && s.elapsed !== null && s.elapsed >= 0);
         if (inMix) sawMix = true;
         status.textContent = inMix ? "Recording the mix" : sawMix ? "Mix done, finishing…" : "Recording, the mix is coming";
-        if (sawMix && !s.mixing && !(s.plan?.overlap && s.elapsed >= 0)) { if (endAt === null) endAt = elapsed + TAIL_MS; }
+        // El final se fija al salir de la mezcla y se anula si vuelve a estar dentro (una lectura suelta no corta)
+        if (inMix) endAt = null;
+        else if (sawMix && endAt === null) endAt = elapsed + TAIL_MS;
         if (elapsed > 180000) endAt = elapsed;
       } else {
         status.textContent = "Recording";
