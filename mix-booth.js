@@ -1424,16 +1424,19 @@
       const cover = track?.cover;
       const lines = lyricsOf(track?.uri);
       const line = lines ? lineAt(lines, pos) : null;
+      const analysis = analysisOf(track?.uri);
       return {
         title: track?.name ?? "", artist: track?.artist ?? "", uri: track?.uri, bpm: bpm ? Math.round(bpm) : null,
         img: cover ? decodedNow(cover) : null, pal: paletteOf(cover) ?? FALLBACK_PALETTE,
         pos, length: track?.length || 1, line, hasLyrics: !!lines?.length,
-        beat: Math.exp(-beatPhase(analysisOf(track?.uri), pos, bpm, anchor ?? 0) * 5),
+        beat: beatPulse(beatPhase(analysis, pos, bpm, anchor ?? 0)),
+        // Para la forma de onda: volumen de cada tramo y dónde cae cada beat
+        segs: analysis?.segments ?? null, beats: analysis?.beats ?? null, lines: lines ?? null,
       };
     };
     const a = song(s.a, posA, ov?.bpmA, ov?.startAMs);
     const b = s.b ? song(s.b, posB, ov?.bpmB, ov?.startBMs) : null;
-    return { now: now / 1000, m, inMix, mixing: s.mixing, a, b, cur: m < 0.5 || !b ? a : b, state: s };
+    return { now: now / 1000, m, inMix, mixing: s.mixing, dur: ov?.durationMs || 1, a, b, cur: m < 0.5 || !b ? a : b, state: s };
   }
   // Imágenes ya listas para pintar (sin esperar)
   const decodedNowCache = new Map();
@@ -1455,6 +1458,8 @@
   const easeOut = (x) => 1 - Math.pow(1 - clamp01(x), 3);
   const easeBack = (x) => { x = clamp01(x); const c = 1.7; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
   const smoothStep = (x) => { x = clamp01(x); return x * x * (3 - 2 * x); };
+  // El golpe de cada beat: sube en unas centésimas (no de un cuadro a otro, que en vídeo parece que tiembla) y se apaga
+  const beatPulse = (phase) => (phase < 0.07 ? smoothStep(phase / 0.07) : Math.exp(-(phase - 0.07) * 4.5));
   // Dónde está la frontera entre las dos canciones durante la mezcla: entra rápido hasta la mitad,
   // las dos comparten pantalla casi toda la mezcla, y al final la nueva se queda con todo
   const splitLevel = (m) => Math.round(CLIP_H * (1 - 0.5 * smoothStep(m / 0.18) - 0.5 * smoothStep((m - 0.82) / 0.18)));
@@ -1796,7 +1801,7 @@
     const yaw = Math.sin(smoothStep((m - 0.1) / 0.8) * Math.PI) * 0.25 + Math.sin(t * 0.3) * 0.07;
     const eye = [look[0] + Math.sin(yaw) * dist, look[1] + 1.2 - hold * 1.2 + Math.sin(t * 0.5) * 0.4, look[2] + Math.cos(yaw) * dist];
     const roll = hold * 0.06 * Math.sin(t * 0.4);
-    const fov = ((52 - beat * 1.6 + hold * 8) * Math.PI) / 180;
+    const fov = ((52 - beat * 0.7 + hold * 8) * Math.PI) / 180;
     const VP = m4.mul(m4.persp(fov, CLIP_W / CLIP_H, 0.1, 200), m4.look(eye, look, [Math.sin(roll), Math.cos(roll), 0]));
     gl.viewport(0, 0, CLIP_W, CLIP_H);
     const deepA = A.pal.deep, deepB = B ? B.pal.deep : deepA;
@@ -1830,7 +1835,7 @@
     const worlds = [];
     const world = (song, pos, vis) => {
       if (!song || vis <= 0.01) return;
-      const s = orbitSong(E, song), [px, py, pz] = pos, bs = 1 + song.beat * 0.05;
+      const s = orbitSong(E, song), [px, py, pz] = pos, bs = 1 + song.beat * 0.025;
       quad(E.glow, px, py, pz - 2, 0, 0, 26 * bs, 26 * bs, song.pal.c[0], 0.55 * vis, true);
       quad(E.glow, px + 4, py + 3, pz - 4, 0, 0, 18, 18, song.pal.c[1] ?? song.pal.c[0], 0.35 * vis, true);
       worlds.push({ s, px, py, pz, bs, vis, d: Math.hypot(px - eye[0], py - eye[1], pz - eye[2]) });
@@ -1869,10 +1874,262 @@
     ctx.textAlign = "center"; ctx.font = "800 24px Inter"; ctx.fillStyle = "rgba(255,255,255,.45)"; ctx.fillText("MIX BOOTH", CLIP_W / 2, CLIP_H - 60);
   }
 
+  // ----- Letra al estilo de Spicy Lyrics -----
+  // Varias líneas a la izquierda: la anterior apagada arriba, la que suena brillante y las siguientes debajo.
+  // En la que suena, cada palabra se rellena de luz de izquierda a derecha mientras se canta, sube un poco y
+  // brilla; las demás líneas se ven tenues y algo desenfocadas según lo lejos que están. Al pasar de línea la
+  // lista sube con suavidad. En las partes sin letra, tres puntos que laten
+  function spicyLyrics(ctx, song, X, Y, maxW, size, rowsBelow, alpha = 1) {
+    const lines = song.lines;
+    if (!lines?.length || alpha <= 0.01) return;
+    const pos = song.pos, lh = size * 1.18;
+    ctx.save(); ctx.font = `800 ${size}px Inter`; ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+    const sp = ctx.measureText(" ").width;
+    // Cada línea partida en filas que caben en el ancho
+    const layout = (line) => {
+      if (line.rows) return line.rows;
+      const rows = [[]]; let w = 0;
+      for (const word of line.words) { const ww = ctx.measureText(word.text).width; if (w + ww > maxW && rows[rows.length - 1].length) { rows.push([]); w = 0; } rows[rows.length - 1].push({ word, ww }); w += ww + sp; }
+      return rows;
+    };
+    let idx = -1;
+    for (let i = 0; i < lines.length; i++) { if (lines[i].start <= pos + 150) idx = i; else break; }
+    // Desplazamiento suave: durante 450 ms tras empezar la línea, la lista sube desde la anterior
+    const settle = idx >= 0 ? smoothStep((pos - lines[idx].start + 150) / 450) : 1;
+    const first = Math.max(0, idx - 1), last = Math.min(lines.length - 1, Math.max(idx, 0) + rowsBelow);
+    const heights = [];
+    for (let i = first; i <= last; i++) heights[i] = layout(lines[i]).length * lh + size * 0.35;
+    // Posición de la línea actual: arriba del bloque, dejando sitio a la anterior
+    const prevH = idx > 0 ? heights[idx - 1] ?? lh : 0;
+    let y = Y - (idx > 0 ? prevH : 0) + (1 - settle) * (idx > 0 ? prevH : 0);
+    const bottom = Y + lh * (rowsBelow + 1.3);
+    // La letra no sale de su franja: al subir, la línea anterior se mete por arriba, y las de abajo no tocan nada
+    ctx.beginPath(); ctx.rect(X - 60, Y - size * 0.3, maxW + 160, bottom - Y + size * 2); ctx.clip();
+    for (let i = first; i <= last; i++) {
+      const line = lines[i], rows = layout(line), dist = i - idx;
+      const active = i === idx && pos <= line.end + 400;
+      // Las líneas lejanas se apagan y se desenfocan; la anterior se va desvaneciendo al subir
+      let a = active ? 1 : i < idx ? 0.32 * (1 - settle) : Math.max(0.12, 0.42 - (dist - 1) * 0.12);
+      if (y + rows.length * lh > bottom + lh) a *= 0.4;
+      if (y > bottom) break;
+      const blur = active ? 0 : Math.min(5, Math.abs(dist) * 2.2);
+      ctx.globalAlpha = alpha * a;
+      ctx.filter = blur > 0.3 ? `blur(${blur.toFixed(1)}px)` : "none";
+      rows.forEach((row, r) => {
+        let px = X;
+        const py = y + size + r * lh;
+        // Abajo solo entran filas enteras: nada de líneas cortadas por la mitad
+        if (py > bottom + size * 0.2) return;
+        for (const { word, ww } of row) {
+          const k = active ? clamp01((pos - word.start) / Math.max(1, word.end - word.start)) : i < idx ? 1 : 0;
+          if (!active) { ctx.fillStyle = "#fff"; ctx.fillText(word.text, px, py); px += ww + sp; continue; }
+          // Relleno de luz que avanza por la palabra, con el borde suave
+          const lift = -size * 0.06 * Math.sin(Math.PI * Math.min(1, k * 1.15)) - (k >= 1 ? size * 0.015 : 0);
+          const g = ctx.createLinearGradient(px, 0, px + ww, 0);
+          g.addColorStop(0, k > 0 ? "rgba(255,255,255,1)" : "rgba(255,255,255,.38)");
+          g.addColorStop(clamp01(k - 0.08), k > 0 ? "rgba(255,255,255,1)" : "rgba(255,255,255,.38)");
+          g.addColorStop(clamp01(k + 0.08), "rgba(255,255,255,.38)");
+          g.addColorStop(1, k >= 1 ? "rgba(255,255,255,1)" : "rgba(255,255,255,.38)");
+          ctx.save();
+          if (k > 0 && k < 1) { ctx.shadowColor = "rgba(255,255,255,.75)"; ctx.shadowBlur = size * 0.35; }
+          else if (k >= 1) { ctx.shadowColor = "rgba(255,255,255,.35)"; ctx.shadowBlur = size * 0.18; }
+          ctx.fillStyle = g; ctx.fillText(word.text, px, py + lift);
+          ctx.restore();
+          px += ww + sp;
+        }
+      });
+      y += heights[i] ?? rows.length * lh;
+    }
+    ctx.filter = "none";
+    // Sin letra ahora mismo (intro o parte instrumental larga): tres puntos que laten
+    const next = lines[idx + 1], current = lines[idx];
+    const gap = (!current || pos > current.end + 600) && (!next || next.start - pos > 1500);
+    if (gap) {
+      ctx.globalAlpha = alpha;
+      for (let d = 0; d < 3; d++) {
+        const ph = (pos / 1000) * 2.2 - d * 0.35, s = 0.6 + 0.4 * Math.max(0, Math.sin(ph * Math.PI));
+        ctx.fillStyle = `rgba(255,255,255,${(0.35 + 0.65 * Math.max(0, Math.sin(ph * Math.PI))).toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(X + size * 0.3 + d * size * 0.75, Y + size * 0.6, size * 0.16 * s, 0, 7); ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // ----- Estilo Waveform -----
+  // La forma de onda de cada canción (barras finas sobre una línea discontinua) vista muy de lado y de cerca:
+  // las barras pasan rozando la cámara y se pierden en diagonal. Lo que ya sonó va del color de la canción.
+  // En la mezcla las dos ondas se juntan en el centro, la nueva un poco delante y más abajo; donde se pisan,
+  // sus colores se mezclan. Las barras salen del volumen real de cada tramo de la canción
+  const WAVE_MS = 45, WAVE_GAP = 0.105;
+  const WAVE_DUST = Array.from({ length: 140 }, (_, i) => ({ x: (Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1) * 36 - 18, y: (Math.abs(Math.sin(i * 78.233) * 12345.678) % 1) * 16 - 8, z: (Math.abs(Math.sin(i * 39.425) * 24634.6345) % 1) * 18 - 12, s: 0.02 + (i % 4) * 0.012, ph: i * 0.7 }));
+  const waveHash = (n, seed) => Math.abs(Math.sin(n * 12.9898 + seed) * 43758.5453) % 1;
+  // Volumen (0 a 1) de la canción en un momento: del análisis de audio si lo hay; si no, una onda inventada estable
+  function waveLevel(song, ms, seed) {
+    const segs = song.segs, bar = Math.floor(ms / WAVE_MS);
+    let v;
+    if (segs?.length) {
+      let lo = 0, hi = segs.length - 1, i = -1;
+      while (lo <= hi) { const mid = (lo + hi) >> 1; if (segs[mid].at <= ms) { i = mid; lo = mid + 1; } else hi = mid - 1; }
+      if (i < 0) return 0.05;
+      v = clamp01((segs[i].loud + 32) / 30) ** 1.4;
+    } else {
+      const x = ms / 1000;
+      v = clamp01(0.5 + 0.25 * Math.sin(x * 1.7 + seed) + 0.15 * Math.sin(x * 5.3 + seed * 2) + 0.1 * Math.sin(x * 11.1 + seed * 3));
+    }
+    return clamp01(v * (0.5 + 0.5 * waveHash(bar, seed)));
+  }
+  function drawWaveform(ctx, F) {
+    const t = F.now, W = CLIP_W, H = CLIP_H;
+    const both = !!(F.b && F.inMix), m = both ? F.m : 0;
+    const A = both ? F.a : F.cur, B = both ? F.b : null;
+    const lerp = (p, q, k) => p + (q - p) * k;
+    const mixC = (p, q, k) => p.map((v, i) => lerp(v, q[i], k));
+    const seedOf = (s) => { let h = 0; for (const ch of s.uri || s.title) h = (h * 31 + ch.charCodeAt(0)) % 1000; return h / 100; };
+    const into = smoothStep(m / 0.2), outOf = smoothStep((m - 0.8) / 0.2), hold = into * (1 - outOf);
+    const growB = B ? smoothStep(m / 0.18) : 0, shrinkA = B ? smoothStep((m - 0.8) / 0.17) : 0;
+    // Dónde termina la que sale y dónde empezó la que entra (en el tiempo de cada una)
+    const aEnd = B ? A.pos + (1 - m) * (F.dur || 1) : Infinity, bStart = B ? B.pos - m * (F.dur || 1) : -Infinity;
+    const yA = 0.45 * into, yB = -0.45 * (1 - outOf), zA = -0.5 * into, zB = 0.6 * (1 - outOf);
+    const target = [0, (yA * (1 - shrinkA) + yB * growB) / ((1 - shrinkA) + growB || 1) - 0.3, 0];
+    // Cámara cerca y muy de lado; gira un poco, despacio
+    const ang = -1.2 + Math.sin(t * 0.17) * 0.1 + Math.sin(smoothStep((m - 0.1) / 0.8) * Math.PI) * 0.12;
+    const R = 6.2 + hold * 0.8, hgt = 0.9 + Math.sin(t * 0.3) * 0.25;
+    const eye = [target[0] + Math.sin(ang) * R, target[1] + hgt, target[2] + Math.cos(ang) * R];
+    const sub = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
+    const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+    const crs = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+    const fwd = nrm(sub), right = nrm(crs(fwd, [Math.sin(Math.sin(t * 0.25) * 0.04), 1, 0])), up = crs(right, fwd);
+    const f = H / 2 / Math.tan((55 * Math.PI) / 360), cx = W / 2, cy = H / 2;
+    const proj = (x, y, z) => {
+      const dx = x - eye[0], dy = y - eye[1], dz = z - eye[2];
+      const Z = dx * fwd[0] + dy * fwd[1] + dz * fwd[2];
+      if (Z < 0.4) return null;
+      return [cx + ((dx * right[0] + dy * right[1] + dz * right[2]) * f) / Z, cy - ((dx * up[0] + dy * up[1] + dz * up[2]) * f) / Z, Z];
+    };
+    // Fondo con el color de las dos canciones según cuánto suena cada una, y un halo de cada una detrás de su onda
+    const deep = B ? mixC(A.pal.deep, B.pal.deep, lerp(growB * 0.5, 1, outOf)) : A.pal.deep;
+    const g0 = ctx.createLinearGradient(0, 0, 0, H);
+    g0.addColorStop(0, "#000"); g0.addColorStop(0.5, rgba(mixC(deep, [255, 255, 255], 0.04))); g0.addColorStop(1, "#000");
+    ctx.fillStyle = g0; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "screen";
+    const halo = (song, x, y, a) => {
+      if (!song || a <= 0.01) return; const p = proj(x, y, -3); if (!p) return;
+      const r = (10 * f) / p[2], g = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], r);
+      g.addColorStop(0, rgba(song.pal.c[0], 0.3 * a)); g.addColorStop(1, rgba(song.pal.c[0], 0)); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    };
+    halo(A, -2 * into, yA, 1 - shrinkA); halo(B, 2 * growB * (1 - outOf), yB, growB);
+    ctx.globalCompositeOperation = "source-over";
+    const dust = (front) => {
+      for (const d of WAVE_DUST) {
+        if ((d.z > -2) !== front) continue;
+        const p = proj(d.x + Math.sin(t * 0.3 + d.ph) * 0.4, d.y + target[1] + Math.sin(t * 0.5 + d.ph) * 0.3, d.z); if (!p) continue;
+        ctx.fillStyle = `rgba(255,255,255,${((0.25 + 0.35 * Math.sin(t * 1.3 + d.ph) ** 2) * clamp01(1.3 - p[2] / 30)).toFixed(3)})`;
+        ctx.beginPath(); ctx.arc(p[0], p[1], Math.max(0.8, (d.s * f) / p[2]), 0, 7); ctx.fill();
+      }
+    };
+    dust(false);
+    // Línea discontinua, brillo de la base y una marca en cada beat (de la canción que manda)
+    const baseline = (song, y, z, a, marks, from, to) => {
+      if (!song || a <= 0.01) return;
+      ctx.strokeStyle = `rgba(255,255,255,${(0.35 * a).toFixed(3)})`;
+      for (let x = -34; x < 34; x += 0.5) { const p = proj(x, y, z), q = proj(x + 0.25, y, z); if (!p || !q) continue; ctx.lineWidth = Math.max(1, (0.05 * f) / p[2]); ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+      const p = proj(-20, y, z), q = proj(20, y, z);
+      if (p && q) { const g = ctx.createLinearGradient(p[0], p[1], q[0], q[1]); g.addColorStop(0, rgba(song.pal.c[0], 0)); g.addColorStop(0.5, rgba(song.pal.c[0], 0.35 * a)); g.addColorStop(1, rgba(song.pal.c[0], 0)); ctx.strokeStyle = g; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+      if (marks <= 0.01) return;
+      const beats = song.beats?.length ? song.beats : null, beatMs = 60000 / (song.bpm || 120);
+      const list = beats ? beats.filter((ms) => ms > song.pos - 7000 && ms < song.pos + 7000) : Array.from({ length: Math.ceil(14000 / beatMs) }, (_, k) => (Math.ceil((song.pos - 7000) / beatMs) + k) * beatMs);
+      list.forEach((ms, k) => {
+        if (ms < from || ms > to) return;
+        const x = ((ms - song.pos) / WAVE_MS) * WAVE_GAP, big = k % 4 === 0;
+        const t1 = proj(x, y - 1.0, z + 0.25), t2 = proj(x, y - (big ? 1.25 : 1.12), z + 0.25); if (!t1 || !t2) return;
+        ctx.strokeStyle = `rgba(255,255,255,${((big ? 0.55 : 0.3) * marks).toFixed(3)})`; ctx.lineWidth = Math.max(1, (0.03 * f) / t1[2]); ctx.beginPath(); ctx.moveTo(t1[0], t1[1]); ctx.lineTo(t2[0], t2[1]); ctx.stroke();
+      });
+    };
+    baseline(A, yA, zA, 1 - smoothStep((m - 0.9) / 0.1), 1 - growB, -Infinity, aEnd);
+    baseline(B, yB, zB, smoothStep(m / 0.08), growB, bStart, Infinity);
+    // Las barras de las dos ondas, de lejos a cerca, en modo "pantalla" para que donde se pisan se mezclen los colores
+    const bars = [];
+    const track = (song, y, z, grow, from, to) => {
+      if (!song || grow <= 0.005) return;
+      const seed = seedOf(song), n0 = Math.floor((song.pos - 7500) / WAVE_MS), n1 = Math.ceil((song.pos + 7500) / WAVE_MS);
+      for (let n = n0; n <= n1; n++) {
+        const ms = n * WAVE_MS;
+        if (ms < from || ms > to) continue;                 // antes de empezar o después de acabar: solo la línea
+        const dist = (ms - song.pos) / 1000;
+        const glow = Math.exp(-(dist * dist) / 0.04), played = clamp01(0.5 - dist * 8);
+        // Al crecer o encogerse en la mezcla, las barras cercanas al ahora van primero
+        const g = clamp01(grow * 1.6 - Math.abs(dist) * 0.06);
+        if (g <= 0) continue;
+        const h = (0.06 + waveLevel(song, ms, seed) * lerp(1.45, 1.2, hold) * (1 + glow * song.beat * 0.25)) * smoothStep(g);
+        const x = ((ms - song.pos) / WAVE_MS) * WAVE_GAP, p = proj(x, y, z);
+        if (p) bars.push({ x, y, z, h, song, played, glow, d: p[2], alpha: 0.35 + 0.65 * g });
+      }
+    };
+    track(A, yA, zA, 1 - shrinkA, -Infinity, aEnd);
+    track(B, yB, zB, growB, bStart, Infinity);
+    bars.sort((p, q) => q.d - p.d);
+    ctx.lineCap = "butt"; ctx.globalCompositeOperation = "screen";
+    for (const b of bars) {
+      const top = proj(b.x, b.y + b.h / 2, b.z), bot = proj(b.x, b.y - b.h / 2, b.z);
+      if (!top || !bot) continue;
+      const wpx = Math.max(0.9, (0.045 * f) / b.d);
+      const col = mixC(mixC([255, 255, 255], b.song.pal.c[0], b.played), [255, 255, 255], b.glow * 0.7);
+      const a = b.alpha * lerp(0.35, 1, Math.max(b.played, b.glow)) * clamp01(1.4 - b.d / 40);
+      if (b.glow > 0.05 || b.played > 0.5) { ctx.strokeStyle = rgba(col, (0.08 + b.glow * 0.25) * a); ctx.lineWidth = wpx * 3; ctx.beginPath(); ctx.moveTo(top[0], top[1]); ctx.lineTo(bot[0], bot[1]); ctx.stroke(); }
+      ctx.strokeStyle = rgba(col, a); ctx.lineWidth = wpx; ctx.beginPath(); ctx.moveTo(top[0], top[1]); ctx.lineTo(bot[0], bot[1]); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    // Línea del ahora: una luz vertical que atraviesa las ondas
+    const topY = B ? lerp(yA, yB, shrinkA) : yA, botY = B ? lerp(yA, yB, growB) : yA;
+    const nowTop = proj(0, Math.max(topY, botY) + 1.05, 0), nowBot = proj(0, Math.min(topY, botY) - 1.05, 0);
+    if (nowTop && nowBot) {
+      const accent = B ? mixC(A.pal.c[1] ?? A.pal.c[0], B.pal.c[1] ?? B.pal.c[0], lerp(into * 0.5, 1, outOf)) : A.pal.c[1] ?? A.pal.c[0];
+      ctx.strokeStyle = rgba(accent, 0.18); ctx.lineWidth = 18; ctx.beginPath(); ctx.moveTo(nowTop[0], nowTop[1]); ctx.lineTo(nowBot[0], nowBot[1]); ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 2; ctx.stroke();
+    }
+    dust(true);
+    // Letras: la que sale arriba, la que entra abajo. Aparecen y se van con un fundido corto; al final la nueva
+    // se funde abajo y reaparece arriba, sin cruzar su onda
+    // Cabecera pequeña (portada, título, artista) y debajo la letra al estilo Spicy Lyrics, alineada a la izquierda
+    const lyric = (song, y, alpha, size, below) => {
+      if (!song || alpha <= 0.01) return;
+      const accent = song.pal.c[1] ?? song.pal.c[0];
+      ctx.save(); ctx.globalAlpha = alpha;
+      if (song.img) { ctx.save(); rr(ctx, 90, y, 84, 84, 12); ctx.clip(); ctx.drawImage(song.img, 90, y, 84, 84); ctx.restore(); }
+      ctx.textAlign = "left"; ctx.fillStyle = "#fff"; fitText(ctx, song.title.toUpperCase(), 780, 46, "", "Anton"); ctx.fillText(song.title.toUpperCase(), 194, y + 44);
+      ctx.fillStyle = rgba(accent); ctx.font = "700 26px Inter"; ctx.fillText(`${song.artist.toUpperCase()}${song.bpm ? ` · ${song.bpm} BPM` : ""}`, 194, y + 80);
+      ctx.restore();
+      spicyLyrics(ctx, song, 90, y + 118, 900, size, below, alpha);
+    };
+    // Sombra suave detrás de cada bloque de letra: las barras cercanas se apagan al llegar al texto
+    const shade = (y0, y1, a) => { if (a <= 0.01) return; const g = ctx.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, `rgba(0,0,0,${(0.55 * a).toFixed(3)})`); g.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = g; ctx.fillRect(0, Math.min(y0, y1), W, Math.abs(y1 - y0)); };
+    shade(0, 640, 1);
+    if (B) shade(CLIP_H, 1380, growB * (1 - smoothStep((m - 0.85) / 0.15)));
+    const fadeA = 1 - smoothStep((m - 0.8) / 0.12), fadeB = smoothStep((m - 0.04) / 0.14);
+    const leaveB = smoothStep((m - 0.8) / 0.08), topB = smoothStep((m - 0.9) / 0.1);
+    lyric(A, 150 - (1 - fadeA) * 30, B ? fadeA : 1, Math.round(lerp(66, 56, into)), hold > 0.5 ? 1 : 2);
+    if (B) {
+      lyric(B, 1490 + (1 - fadeB) * 30 + leaveB * 30, fadeB * (1 - leaveB), 56, 1);
+      lyric(B, 150 + (1 - topB) * 30, topB, 66, 2);
+    }
+    // Viñeta, cabecera de mezcla y firma
+    const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.78);
+    v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,.55)"); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+    const hud = B ? smoothStep(m / 0.1) * (1 - smoothStep((m - 0.9) / 0.1)) : 0;
+    if (hud > 0) {
+      ctx.save(); ctx.globalAlpha = hud; ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = "800 26px Inter"; ctx.fillText("MIXING", W / 2, 70);
+      ctx.fillStyle = "rgba(255,255,255,.2)"; ctx.fillRect(340, 92, 400, 4);
+      const g = ctx.createLinearGradient(340, 0, 740, 0); g.addColorStop(0, rgba(A.pal.c[0])); g.addColorStop(1, rgba(B.pal.c[0])); ctx.fillStyle = g; ctx.fillRect(340, 92, 400 * m, 4);
+      ctx.restore();
+    }
+    ctx.textAlign = "center"; ctx.font = "800 24px Inter"; ctx.fillStyle = "rgba(255,255,255,.45)"; ctx.fillText("MIX BOOTH", W / 2, H - 60);
+  }
+
   // </clip-art>
 
   const CLIP_STYLES = {
     orbit: { name: "Orbit", hint: "A 3D camera that holds both songs on the mix", draw: drawOrbit },
+    wave: { name: "Waveform", hint: "Each song's waveform in 3D; they overlap on the mix", draw: drawWaveform },
     aura: { name: "Aura", hint: "Liquid colours, words that float in", draw: drawAura },
     kinetic: { name: "Kinetic", hint: "Giant words, a split screen on the mix", draw: drawKinetic },
   };
@@ -1897,25 +2154,37 @@ ${beatPhase.toString()}
 ${lineAt.toString()}
 ${SHA256_SOURCE}
 const FALLBACK_PALETTE = ${JSON.stringify(FALLBACK_PALETTE)};
-const STYLES = { orbit: drawOrbit, aura: drawAura, kinetic: drawKinetic };
+const STYLES = { orbit: drawOrbit, wave: drawWaveform, aura: drawAura, kinetic: drawKinetic };
 const ctx = document.getElementById("c").getContext("2d");
 const songs = new Map();
 let tick = null, tickAt = 0;
+// Reloj propio y suave: cada aviso de Spotify llega con unos milisegundos de baile, y saltar a cada uno
+// hace temblar el beat. Se avanza con el tiempo real y se corrige poco a poco; solo un salto grande (un
+// cambio de punto en la canción) se aplica de golpe
+const clocks = new Map();
+function steady(key, target, rate) {
+  const now = performance.now(), c = clocks.get(key);
+  if (!c || Math.abs(target - (c.val + (now - c.at) * rate)) > 600) { clocks.set(key, { val: target, at: now }); return target; }
+  const predicted = c.val + (now - c.at) * rate;
+  c.val = predicted + (target - predicted) * 0.06; c.at = now;
+  return c.val;
+}
 function songAt(s, dt) {
   if (!s) return null;
   const info = songs.get(s.uri) || {};
-  const pos = s.pos + dt * (s.speed || 1);
+  const pos = steady(s.uri, s.pos + dt * (s.speed || 1), s.speed || 1);
   return { title: info.title || "", artist: info.artist || "", uri: s.uri, bpm: s.bpm, img: info.img || null, pal: info.pal || FALLBACK_PALETTE,
     pos, length: s.length || 1, line: info.lines ? lineAt(info.lines, pos) : null, hasLyrics: !!(info.lines && info.lines.length),
-    beat: Math.exp(-beatPhase(info.beats ? { beats: info.beats } : null, pos, s.bpm, s.anchor || 0) * 5) };
+    beat: beatPulse(beatPhase(info.beats ? { beats: info.beats } : null, pos, s.bpm, s.anchor || 0)),
+    segs: info.segs || null, beats: info.beats || null, lines: info.lines || null };
 }
 function frame(now) {
   requestAnimationFrame(frame);
   if (!tick) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, CLIP_W, CLIP_H); return; }
   const dt = Math.min(Date.now() - tickAt, 400);
-  const m = tick.inMix ? clamp01(tick.m + dt / tick.dur) : tick.m;
+  const m = tick.inMix ? clamp01(steady("mix", tick.m * tick.dur + dt, 1) / tick.dur) : tick.m;
   const a = songAt(tick.a, dt), b = songAt(tick.b, dt);
-  ctx.save(); STYLES[tick.style](ctx, { now: now / 1000, m, inMix: tick.inMix, mixing: tick.mixing, a, b, cur: m < 0.5 || !b ? a : b }); ctx.restore();
+  ctx.save(); (STYLES[tick.style] || drawOrbit)(ctx, { now: now / 1000, m, inMix: tick.inMix, mixing: tick.mixing, dur: tick.dur, a, b, cur: m < 0.5 || !b ? a : b }); ctx.restore();
 }
 const fonts = document.fonts.ready.then(() => Promise.all(["120px Anton", "800 64px Inter", "500 38px Inter", "700 40px Inter", "600 30px Inter"].map((f) => document.fonts.load(f).catch(() => {}))));
 const pw = decodeURIComponent(location.hash.slice(1));
@@ -1956,7 +2225,9 @@ requestAnimationFrame(frame);`;
     if (!track?.uri) return null;
     const cover = track.big ?? track.cover;
     return { mbClip: "song", uri: track.uri, title: track.name ?? "", artist: track.artist ?? "", cover,
-      pal: paletteOf(track.cover) ?? null, lines: lyricsOf(track.uri) ?? null, beats: analysisOf(track.uri)?.beats ?? null };
+      pal: paletteOf(track.cover) ?? null, lines: lyricsOf(track.uri) ?? null, beats: analysisOf(track.uri)?.beats ?? null,
+      // Volumen de cada tramo, redondeado (para la forma de onda)
+      segs: analysisOf(track.uri)?.segments?.map((s) => ({ at: Math.round(s.at), loud: Math.round(s.loud * 10) / 10 })) ?? null };
   }
   function clipTickPacket(style) {
     const F = clipFrame(performance.now());
@@ -2223,7 +2494,7 @@ requestAnimationFrame(frame);`;
         for (const track of tracks) {
           const packet = clipSongPacket(track);
           if (!packet) continue;
-          const sig = `${packet.cover}|${!!packet.pal}|${packet.lines?.length ?? -1}|${packet.beats?.length ?? -1}`;
+          const sig = `${packet.cover}|${!!packet.pal}|${packet.lines?.length ?? -1}|${packet.beats?.length ?? -1}|${packet.segs?.length ?? -1}`;
           if (!full && sentSongs.get(packet.uri) === sig) continue;
           sentSongs.set(packet.uri, sig);
           obs.request("BroadcastCustomEvent", { eventData: packet }).catch(() => {});

@@ -21,10 +21,11 @@ Open it with the **Mix Booth** button (two records) in the player bar.
 
 Click **● Clip** in the booth to record a 1080×1920 video of the song or the mix, ready for TikTok, Reels or Shorts. [OBS Studio](https://obsproject.com) does the recording, with Spotify's own sound.
 
-![Three clip styles: Orbit, Aura and Kinetic](https://raw.githubusercontent.com/SrPictus/mix-booth/main/screenshots/clips.png)
+![Clip styles: Orbit, Waveform and Kinetic](https://raw.githubusercontent.com/SrPictus/mix-booth/main/screenshots/clips.png)
 
-- **Three styles**, each with a live preview, and you pick one every time you record:
+- **Four styles**, each with a live preview, and you pick one every time you record:
   - **Orbit:** each song is a small 3D space (its cover, its colours, its title and its lyrics) and a camera floats through it, pulsing on the beat. When the mix starts the camera pulls back until both songs are in the shot, holds them while they play together, then flies down to the new one
+  - **Waveform:** the song's waveform, built from its real loudness, seen up close and from the side so the bars rush past you. The lyrics scroll like in Spicy Lyrics, each word filling with light as it's sung. On the mix both waveforms meet in the middle, one slightly in front of the other, and their colours blend where they overlap
   - **Aura:** a liquid gradient made from the cover's colours, the cover floating above it, and the lyrics coming in word by word out of a blur. On the mix, the screen splits along a liquid wave: the outgoing song stays on top and the incoming one rises from the bottom, each with its own cover, colours and lyrics at the same time
   - **Kinetic:** the word being sung fills the screen, each one arriving with its own motion. On the mix, the screen splits in two and both songs sing at once, each half with its own giant word, and the line between them glitches on every beat
 - **Real data:** the lyrics come with each word's timing (from [Spicy Lyrics](https://github.com/Spikerko/spicy-lyrics)' saved copy, or Spotify's), and the animation follows the song's real beat and the mix's real progress
