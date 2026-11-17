@@ -1648,9 +1648,231 @@
     addGrain(ctx);
   }
 
+  // ----- Estilo Orbit (3D) -----
+  // Cada canción es un pequeño espacio en 3D (portada, halo, título y letra) y una cámara lo recorre.
+  // Al empezar la mezcla la cámara se aleja hasta encuadrar las dos (una encima de otra), las mantiene
+  // mientras suenan juntas girando despacio, y al acabar baja a la nueva. Termina con el mismo encuadre
+  // con el que muestra una canción sola, así que no hay salto. Lo dibuja WebGL en un lienzo aparte
+  const ORBIT = { a: [0, 8.5, 0], b: [0, -9.5, -3] };
+  let orbitGL;
+  function orbitEngine() {
+    if (orbitGL !== undefined) return orbitGL;
+    orbitGL = null;
+    const canvas = document.createElement("canvas"); canvas.width = CLIP_W; canvas.height = CLIP_H;
+    const gl = canvas.getContext("webgl", { premultipliedAlpha: false, antialias: true });
+    if (!gl) return null;
+    const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const prog = gl.createProgram();
+    gl.attachShader(prog, compile(gl.VERTEX_SHADER, "attribute vec2 p; uniform mat4 mvp; uniform vec2 uvs; varying vec2 uv; varying float d; void main(){ uv = (p + 0.5) * uvs; vec4 q = mvp * vec4(p, 0.0, 1.0); d = q.w; gl_Position = q; }"));
+    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, "precision mediump float; varying vec2 uv; varying float d; uniform sampler2D tex; uniform vec4 tint; void main(){ vec4 c = texture2D(tex, uv) * tint; float fog = 1.0 - clamp((d - 14.0) / 61.0, 0.0, 1.0); gl_FragColor = vec4(c.rgb, c.a * fog); }"));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) return null;
+    gl.useProgram(prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]), gl.STATIC_DRAW);
+    const locP = gl.getAttribLocation(prog, "p"); gl.enableVertexAttribArray(locP); gl.vertexAttribPointer(locP, 2, gl.FLOAT, false, 0, 0);
+    const U = {}; for (const n of ["mvp", "tex", "tint", "uvs"]) U[n] = gl.getUniformLocation(prog, n);
+    gl.enable(gl.BLEND);
+    // Los lienzos 2D tienen el eje vertical al revés que WebGL
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    const texture = (src, repeat = false) => {
+      const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      const wrap = repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE; gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+      if (src) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+      return t;
+    };
+    const paint = (w, h, draw) => { const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d")); return c; };
+    const glow = (stop) => (x) => { const g = x.createRadialGradient(128, 128, 0, 128, 128, 128); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(stop, "rgba(255,255,255,.4)"); g.addColorStop(1, "rgba(255,255,255,0)"); x.fillStyle = g; x.fillRect(0, 0, 256, 256); };
+    orbitGL = {
+      canvas, gl, U, texture,
+      upload(t, src) { gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src); },
+      paint,
+      glow: texture(paint(256, 256, glow(0.35))),
+      dot: texture(paint(256, 256, glow(0.3))),
+      grid: texture(paint(256, 256, (x) => { x.strokeStyle = "rgba(255,255,255,.55)"; x.lineWidth = 3; x.strokeRect(0, 0, 256, 256); }), true),
+      songs: new Map(),
+      parts: Array.from({ length: 220 }, (_, i) => ({ x: ((Math.sin(i * 12.9898) * 43758.5453) % 1) * 40 - 20, y: ((Math.sin(i * 78.233) * 12345.678) % 1) * 40 - 20, z: (i / 220) * -110 + 30, side: i % 2, s: 0.15 + (i % 5) * 0.06 })),
+    };
+    return orbitGL;
+  }
+  // Matrices 4x4 por columnas
+  const m4 = {
+    mul(a, b) { const o = new Float32Array(16); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k]; o[i * 4 + j] = s; } return o; },
+    persp(fov, asp, n, f) { const t = 1 / Math.tan(fov / 2); return new Float32Array([t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (f + n) / (n - f), -1, 0, 0, (2 * f * n) / (n - f), 0]); },
+    look(e, c, up) {
+      const sub = [e[0] - c[0], e[1] - c[1], e[2] - c[2]];
+      const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+      const crs = (p, q) => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+      const dt = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+      const z = nrm(sub), x = nrm(crs(up, z)), y = crs(z, x);
+      return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -dt(x, e), -dt(y, e), -dt(z, e), 1]);
+    },
+    // Trasladar, girar en Y y en X, y escalar (ancho, alto). Escribe en `o` para no crear matrices nuevas
+    // en cada cuadro (cientos por cuadro harían que el navegador parase a limpiar memoria: tirones)
+    modelInto(o, px, py, pz, ry, rx, sx, sy) {
+      const cy = Math.cos(ry), sY = Math.sin(ry), cx = Math.cos(rx), sX = Math.sin(rx);
+      o[0] = cy * sx; o[1] = 0; o[2] = -sY * sx; o[3] = 0;
+      o[4] = sY * sX * sy; o[5] = cx * sy; o[6] = cy * sX * sy; o[7] = 0;
+      o[8] = sY * cx; o[9] = -sX; o[10] = cy * cx; o[11] = 0;
+      o[12] = px; o[13] = py; o[14] = pz; o[15] = 1;
+      return o;
+    },
+    mulInto(o, a, b) {
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + j] * b[i * 4 + k]; o[i * 4 + j] = s; }
+      return o;
+    },
+  };
+  const orbitModel = new Float32Array(16), orbitMVP = new Float32Array(16);
+  // Lo de cada canción en la GPU: portada, título y letra (la letra se repinta cada cuadro, con las palabras que ya sonaron encendidas)
+  function orbitSong(E, song) {
+    const key = song.uri || `${song.title}|${song.artist}`;
+    let s = E.songs.get(key);
+    if (!s) {
+      s = { cover: E.texture(null), coverFrom: undefined, title: E.texture(null), titleKey: "", lyric: E.texture(null), lyricCanvas: E.paint(1024, 512, () => {}), titleCanvas: E.paint(1024, 256, () => {}) };
+      E.songs.set(key, s);
+      if (E.songs.size > 6) { const [old, o] = E.songs.entries().next().value; for (const t of [o.cover, o.title, o.lyric]) E.gl.deleteTexture(t); E.songs.delete(old); }
+    }
+    const accent = song.pal.c[1] ?? song.pal.c[0];
+    if (s.coverFrom !== song.img) {
+      s.coverFrom = song.img;
+      // Sin portada todavía: un degradado con sus colores
+      const c = E.paint(1024, 1024, (x) => {
+        x.beginPath(); x.roundRect(8, 8, 1008, 1008, 70); x.clip();
+        if (song.img) x.drawImage(song.img, 0, 0, 1024, 1024);
+        else { const g = x.createLinearGradient(0, 0, 1024, 1024); g.addColorStop(0, rgba(song.pal.c[0])); g.addColorStop(1, rgba(song.pal.c[2] ?? song.pal.deep)); x.fillStyle = g; x.fillRect(0, 0, 1024, 1024); }
+        const g = x.createLinearGradient(0, 0, 1024, 1024); g.addColorStop(0, "rgba(255,255,255,.25)"); g.addColorStop(0.45, "rgba(255,255,255,0)"); x.fillStyle = g; x.fillRect(0, 0, 1024, 1024);
+      });
+      try { E.upload(s.cover, c); } catch {}
+    }
+    const titleKey = `${song.title}|${song.artist}|${song.bpm}|${accent}`;
+    if (s.titleKey !== titleKey) {
+      s.titleKey = titleKey;
+      const x = s.titleCanvas.getContext("2d"); x.clearRect(0, 0, 1024, 256); x.textAlign = "center";
+      x.fillStyle = "#fff"; fitText(x, song.title.toUpperCase(), 980, 64, "", "Anton"); x.fillText(song.title.toUpperCase(), 512, 110);
+      x.fillStyle = rgba(accent); x.font = "700 40px Inter"; x.fillText(`${song.artist.toUpperCase()}${song.bpm ? `  ·  ${song.bpm} BPM` : ""}`, 512, 175);
+      E.upload(s.title, s.titleCanvas);
+    }
+    // La letra solo se repinta y se sube a la GPU cuando cambia algo visible (una palabra se enciende un poco más)
+    const line = song.line;
+    let lyricKey = `${accent}`;
+    if (line) { lyricKey += `|${line.start}|`; for (const w of line.words) lyricKey += Math.round(clamp01((song.pos - w.start) / Math.max(1, w.end - w.start)) * 6); }
+    if (lyricKey === s.lyricKey) return s;
+    s.lyricKey = lyricKey;
+    const x = s.lyricCanvas.getContext("2d"); x.clearRect(0, 0, 1024, 512);
+    if (line) {
+      x.font = "900 92px Inter"; x.textBaseline = "alphabetic"; x.textAlign = "left";
+      const sp = x.measureText(" ").width * 1.3, rows = [[]]; let lw = 0;
+      for (const w of line.words) { const ww = x.measureText(w.text).width; if (lw + ww > 960 && rows[rows.length - 1].length) { rows.push([]); lw = 0; } rows[rows.length - 1].push(w); lw += ww + sp; }
+      rows.slice(0, 3).forEach((row, r) => {
+        const total = row.reduce((sum, w) => sum + x.measureText(w.text).width, 0) + sp * (row.length - 1);
+        let px = 512 - total / 2; const py = 140 + r * 120;
+        for (const w of row) {
+          const ww = x.measureText(w.text).width, k = Math.round(clamp01((song.pos - w.start) / Math.max(1, w.end - w.start)) * 6) / 6;
+          x.fillStyle = "rgba(255,255,255,.28)"; x.fillText(w.text, px, py);
+          if (k > 0) { x.save(); x.beginPath(); x.rect(px - 6, py - 100, (ww + 12) * k, 140); x.clip(); x.shadowColor = rgba(accent); x.shadowBlur = 28; x.fillStyle = "#fff"; x.fillText(w.text, px, py); x.restore(); }
+          px += ww + sp;
+        }
+      });
+    }
+    E.upload(s.lyric, s.lyricCanvas);
+    return s;
+  }
+  function drawOrbit(ctx, F) {
+    const E = orbitEngine();
+    if (!E) { drawAura(ctx, F); return; }
+    const { gl, U } = E, t = F.now;
+    const both = !!(F.b && F.inMix), m = both ? F.m : 0;
+    const A = both ? F.a : F.cur, B = both ? F.b : null;
+    const wa = ORBIT.a, wb = ORBIT.b;
+    // Abrir (al empezar), mantener las dos, y cerrar en la nueva
+    const into = both ? smoothStep(m / 0.2) : 0, outOf = both ? smoothStep((m - 0.8) / 0.2) : 0, hold = into * (1 - outOf);
+    const rush = Math.sin(into * Math.PI) + Math.sin(outOf * Math.PI);
+    const beat = B ? A.beat + (B.beat - A.beat) * outOf : A.beat;
+    const lerp = (p, q, k) => p + (q - p) * k;
+    const center = [0, 1, 2].map((i) => (wa[i] + wb[i]) / 2);
+    const look = [0, 1, 2].map((i) => lerp(lerp(wa[i], center[i], into), wb[i], outOf) + (i === 1 ? 0.3 + hold * 1.6 : 0));
+    const dist = 21 + hold * 13;
+    const yaw = Math.sin(smoothStep((m - 0.1) / 0.8) * Math.PI) * 0.25 + Math.sin(t * 0.3) * 0.07;
+    const eye = [look[0] + Math.sin(yaw) * dist, look[1] + 1.2 - hold * 1.2 + Math.sin(t * 0.5) * 0.4, look[2] + Math.cos(yaw) * dist];
+    const roll = hold * 0.06 * Math.sin(t * 0.4);
+    const fov = ((52 - beat * 1.6 + hold * 8) * Math.PI) / 180;
+    const VP = m4.mul(m4.persp(fov, CLIP_W / CLIP_H, 0.1, 200), m4.look(eye, look, [Math.sin(roll), Math.cos(roll), 0]));
+    gl.viewport(0, 0, CLIP_W, CLIP_H);
+    const deepA = A.pal.deep, deepB = B ? B.pal.deep : deepA;
+    gl.clearColor(...deepA.map((v, i) => (lerp(v, deepB[i], outOf) / 255) * 0.6), 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.activeTexture(gl.TEXTURE0); gl.uniform1i(U.tex, 0);
+    // Dibuja un rectángulo sin crear nada nuevo: la matriz se escribe en las mismas dos de siempre
+    const quad = (tex, px, py, pz, ry, rx, sx, sy, c, a, additive, rep = 1) => {
+      gl.blendFunc(gl.SRC_ALPHA, additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
+      gl.uniformMatrix4fv(U.mvp, false, m4.mulInto(orbitMVP, VP, m4.modelInto(orbitModel, px, py, pz, ry, rx, sx, sy)));
+      if (c) gl.uniform4f(U.tint, c[0] / 255, c[1] / 255, c[2] / 255, a); else gl.uniform4f(U.tint, 1, 1, 1, a);
+      gl.uniform2f(U.uvs, rep, rep);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    };
+    // Suelo de rejilla, siempre a la misma altura bajo lo que se mira
+    const floor = B ? A.pal.c[0].map((v, i) => lerp(v, B.pal.c[0][i], outOf)) : A.pal.c[0];
+    quad(E.grid, look[0], look[1] - 14.5, look[2] - 10, 0, -Math.PI / 2, 160, 160, floor, 0.4, true, 40);
+    // Partículas que vienen hacia la cámara; al abrir y al cerrar la mezcla van a toda velocidad.
+    // Las de detrás de las portadas se pintan antes que ellas, y las de delante, después
+    const speed = 3 + hold * 5 + rush * 26, span = 120, split = eye[2] - dist + 2;
+    const particles = (front) => {
+      for (const p of E.parts) {
+        const zz = ((((p.z + t * speed) % span) + span) % span) + eye[2] - span;
+        if ((zz > split) !== front) continue;
+        const c = (p.side && B ? B : A).pal.c[(p.side * 2 + ((p.s * 10) | 0)) % 4] ?? A.pal.c[0];
+        quad(E.dot, eye[0] + p.x, eye[1] + p.y, zz, 0, 0, p.s, p.s * (1 + rush * 3), c, 0.9, true);
+      }
+    };
+    particles(false);
+    // Cada mundo: primero sus halos (se suman, el orden da igual) y luego portada, título y letra, de lejos a cerca
+    const worlds = [];
+    const world = (song, pos, vis) => {
+      if (!song || vis <= 0.01) return;
+      const s = orbitSong(E, song), [px, py, pz] = pos, bs = 1 + song.beat * 0.05;
+      quad(E.glow, px, py, pz - 2, 0, 0, 26 * bs, 26 * bs, song.pal.c[0], 0.55 * vis, true);
+      quad(E.glow, px + 4, py + 3, pz - 4, 0, 0, 18, 18, song.pal.c[1] ?? song.pal.c[0], 0.35 * vis, true);
+      worlds.push({ s, px, py, pz, bs, vis, d: Math.hypot(px - eye[0], py - eye[1], pz - eye[2]) });
+    };
+    // Sola, la canción está donde la cámara la espera; en la mezcla, la que sale arriba y la que entra abajo.
+    // Al terminar la mezcla la nueva queda en el mismo sitio relativo que la de antes, así que no hay salto
+    if (!B) world(A, wa, 1);
+    else { world(A, wa, 1 - smoothStep((m - 0.85) / 0.15)); world(B, wb, smoothStep(m / 0.12)); }
+    worlds.sort((p, q) => q.d - p.d);
+    const face = (qx, qz) => Math.atan2(eye[0] - qx, eye[2] - qz) * 0.75;
+    for (const { s, px, py, pz, bs, vis } of worlds) {
+      quad(s.cover, px, py + 1.2 + Math.sin(t * 1.1) * 0.15, pz, Math.sin(t * 0.8) * 0.08, Math.sin(t * 0.6) * 0.05, 7 * bs, 7 * bs, null, vis, false);
+      quad(s.title, px, py + 6, pz + 0.5, face(px, pz), 0, 8, 2, null, vis, false);
+      quad(s.lyric, px, py - 5, pz + 2.2, face(px, pz + 2.2), 0.06, 10, 5, null, vis, false);
+    }
+    particles(true);
+    ctx.drawImage(E.canvas, 0, 0, CLIP_W, CLIP_H);
+    const v = ctx.createRadialGradient(CLIP_W / 2, CLIP_H / 2, CLIP_H * 0.3, CLIP_W / 2, CLIP_H / 2, CLIP_H * 0.75);
+    v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,.55)"); ctx.fillStyle = v; ctx.fillRect(0, 0, CLIP_W, CLIP_H);
+    if (hold > 0) { ctx.fillStyle = `rgba(255,255,255,${(hold * beat * 0.07).toFixed(3)})`; ctx.fillRect(0, 0, CLIP_W, CLIP_H); }
+    // Cabecera de mezcla: de qué canción a cuál, y cuánto lleva
+    const hud = both ? smoothStep(m / 0.1) * (1 - smoothStep((m - 0.9) / 0.1)) : 0;
+    if (hud > 0) {
+      ctx.save(); ctx.globalAlpha = hud; ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+      ctx.font = "800 30px Inter"; ctx.fillText("MIXING", CLIP_W / 2, 120);
+      ctx.fillStyle = "rgba(255,255,255,.7)"; ctx.font = "700 26px Inter";
+      const left = A.title.toUpperCase(), right = B.title.toUpperCase();
+      ctx.textAlign = "right"; fitText(ctx, left, 420, 26, "700", "Inter"); ctx.fillText(left, CLIP_W / 2 - 40, 170);
+      ctx.textAlign = "left"; fitText(ctx, right, 420, 26, "700", "Inter"); ctx.fillText(right, CLIP_W / 2 + 40, 170);
+      ctx.textAlign = "center"; ctx.font = "700 26px Inter"; ctx.fillText("→", CLIP_W / 2, 170);
+      ctx.fillStyle = "rgba(255,255,255,.2)"; ctx.fillRect(240, 200, 600, 4);
+      const g = ctx.createLinearGradient(240, 0, 840, 0); g.addColorStop(0, rgba(A.pal.c[0])); g.addColorStop(1, rgba(B.pal.c[0]));
+      ctx.fillStyle = g; ctx.fillRect(240, 200, 600 * m, 4);
+      ctx.restore();
+    }
+    ctx.textAlign = "center"; ctx.font = "800 24px Inter"; ctx.fillStyle = "rgba(255,255,255,.45)"; ctx.fillText("MIX BOOTH", CLIP_W / 2, CLIP_H - 60);
+  }
+
   // </clip-art>
 
   const CLIP_STYLES = {
+    orbit: { name: "Orbit", hint: "A 3D camera that holds both songs on the mix", draw: drawOrbit },
     aura: { name: "Aura", hint: "Liquid colours, words that float in", draw: drawAura },
     kinetic: { name: "Kinetic", hint: "Giant words, a split screen on the mix", draw: drawKinetic },
   };
@@ -1675,7 +1897,7 @@ ${beatPhase.toString()}
 ${lineAt.toString()}
 ${SHA256_SOURCE}
 const FALLBACK_PALETTE = ${JSON.stringify(FALLBACK_PALETTE)};
-const STYLES = { aura: drawAura, kinetic: drawKinetic };
+const STYLES = { orbit: drawOrbit, aura: drawAura, kinetic: drawKinetic };
 const ctx = document.getElementById("c").getContext("2d");
 const songs = new Map();
 let tick = null, tickAt = 0;
@@ -1878,8 +2100,8 @@ requestAnimationFrame(frame);`;
     const styles = el("div", "mb-clip-styles", panel);
     styles.setAttribute("role", "radiogroup");
     styles.setAttribute("aria-label", "Style");
-    let chosen = store.get(CLIP_STYLE_KEY, "aura");
-    if (!CLIP_STYLES[chosen]) chosen = "aura";
+    let chosen = store.get(CLIP_STYLE_KEY, "orbit");
+    if (!CLIP_STYLES[chosen]) chosen = "orbit";
     const previews = [];
     for (const [key, info] of Object.entries(CLIP_STYLES)) {
       const card = el("button", "mb-clip-style", styles);
