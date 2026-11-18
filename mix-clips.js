@@ -903,7 +903,7 @@
   }
   // La letra que va sobre cada onda se pinta primero en un lienzo plano (la línea que suena, con cada palabra
   // rellenándose de luz) y luego se pega en 3D sobre el plano de la onda, en franjas, para que tenga perspectiva
-  const WAVE_TEXT_W = 1400, WAVE_TEXT_H = 380;
+  const WAVE_TEXT_W = 1500, WAVE_TEXT_H = 300;
   const waveText = { a: null, b: null };
   function paintWaveLyric(slot, song) {
     let s = waveText[slot];
@@ -912,19 +912,22 @@
     x.clearRect(0, 0, WAVE_TEXT_W, WAVE_TEXT_H);
     x.textBaseline = "alphabetic"; x.textAlign = "left";
     if (line) {
-      // Se busca el tamaño más grande con el que la línea entera cabe: nunca se corta un párrafo largo
-      let size = 104, sp = 0, rows = [[]];
-      for (size of [104, 92, 80, 70, 60, 52, 46]) {
-        x.font = `800 ${size}px Inter`; sp = x.measureText(" ").width; rows = [[]]; let w = 0;
-        for (const word of line.words) { const ww = x.measureText(word.text).width; if (w + ww > WAVE_TEXT_W - 80 && rows[rows.length - 1].length) { rows.push([]); w = 0; } rows[rows.length - 1].push({ word, ww }); w += ww + sp; }
-        if (rows.length * size * 1.12 <= WAVE_TEXT_H - 20) break;
-      }
-      const shown = rows, lh = size * 1.12;
+      // Siempre grande, en dos filas como mucho: si la frase es larga no se encoge ni se corta, avanza por
+      // tramos de dos filas (el tramo que se ve es el de la palabra que suena)
+      const size = 120;
+      x.font = `900 ${size}px Inter`;
+      const sp = x.measureText(" ").width, rows = [[]]; let w = 0;
+      for (const word of line.words) { const ww = x.measureText(word.text).width; if (w + ww > WAVE_TEXT_W - 60 && rows[rows.length - 1].length) { rows.push([]); w = 0; } rows[rows.length - 1].push({ word, ww }); w += ww + sp; }
+      let current = 0;
+      rows.forEach((row, r) => { if (row[0].word.start <= pos + 150) current = r; });
+      const page = Math.floor(current / 2);
+      const shown = rows.slice(page * 2, page * 2 + 2), lh = size * 1.1;
+      s.pageStart = shown[0][0].word.start;
       const top = (WAVE_TEXT_H - shown.length * lh) / 2;
-      // Un velo oscuro y difuso detrás del bloque de letra: las barras siguen viéndose, pero el texto se lee
-      const widest = Math.max(...shown.map((row) => row.reduce((t, { ww }) => t + ww, 0) + sp * (row.length - 1)));
-      x.save(); x.filter = "blur(30px)"; x.fillStyle = "rgba(0,0,0,.42)";
-      x.beginPath(); x.roundRect((WAVE_TEXT_W - widest) / 2 - 40, top - 10, widest + 80, shown.length * lh + 30, 60); x.fill(); x.restore();
+      // Colores de la canción: la palabra que suena brilla con el color vivo de su portada
+      const vivid = song.pal?.c?.[0] ?? [255, 110, 170];
+      const tint = vivid.map((v) => Math.round(v + (255 - v) * 0.55));
+      const dim = `rgba(${tint[0]},${tint[1]},${tint[2]},.78)`;
       shown.forEach((row, r) => {
         const total = row.reduce((t, { ww }) => t + ww, 0) + sp * (row.length - 1);
         let px = (WAVE_TEXT_W - total) / 2;
@@ -932,16 +935,21 @@
         for (const { word, ww } of row) {
           const k = clamp01((pos - word.start) / Math.max(1, word.end - word.start));
           const lift = -size * 0.06 * Math.sin(Math.PI * Math.min(1, k * 1.15));
-          const g = x.createLinearGradient(px, 0, px + ww, 0);
-          const lit = "rgba(255,255,255,1)", dim = "rgba(255,255,255,.55)";
-          g.addColorStop(0, k > 0 ? lit : dim); g.addColorStop(clamp01(k - 0.08), k > 0 ? lit : dim);
-          g.addColorStop(clamp01(k + 0.08), dim); g.addColorStop(1, k >= 1 ? lit : dim);
-          // Sombra oscura debajo: la letra va encima de las barras y tiene que leerse siempre
-          x.save(); x.shadowColor = "rgba(0,0,0,.9)"; x.shadowBlur = size * 0.35; x.fillStyle = "rgba(0,0,0,.55)"; x.fillText(word.text, px, py + lift); x.restore();
-          x.save();
-          if (k > 0 && k < 1) { x.shadowColor = "rgba(255,255,255,.8)"; x.shadowBlur = size * 0.32; }
-          else if (k >= 1) { x.shadowColor = "rgba(255,255,255,.35)"; x.shadowBlur = size * 0.16; }
-          x.fillStyle = g; x.fillText(word.text, px, py + lift); x.restore();
+          // Lo cantado: blanco que pasa al color de la canción hacia abajo; lo que falta: el color suave y tenue.
+          // El relleno avanza por la palabra mientras se canta
+          const lit = x.createLinearGradient(0, py - size * 0.85, 0, py + size * 0.15);
+          lit.addColorStop(0, "#fff"); lit.addColorStop(0.55, "#fff"); lit.addColorStop(1, `rgb(${tint[0]},${tint[1]},${tint[2]})`);
+          // Sombra difusa del color oscuro de la canción, sin bordes: separa la letra de las barras
+          x.save(); x.shadowColor = `rgba(${Math.round(vivid[0] * 0.25)},${Math.round(vivid[1] * 0.25)},${Math.round(vivid[2] * 0.25)},.9)`; x.shadowBlur = size * 0.5; x.shadowOffsetY = size * 0.06;
+          x.fillStyle = dim; x.fillText(word.text, px, py + lift); x.fillText(word.text, px, py + lift); x.restore();
+          if (k > 0) {
+            x.save(); x.beginPath(); x.rect(px - 10, 0, (ww + 20) * k, WAVE_TEXT_H); x.clip();
+            // Brillo del color de la canción alrededor de lo cantado; más fuerte en la palabra que suena
+            x.shadowColor = `rgba(${vivid[0]},${vivid[1]},${vivid[2]},${k < 1 ? 1 : 0.75})`; x.shadowBlur = size * (k < 1 ? 0.6 : 0.32);
+            x.fillStyle = lit; x.fillText(word.text, px, py + lift);
+            x.shadowBlur = 0; x.fillText(word.text, px, py + lift);
+            x.restore();
+          }
           px += ww + sp;
         }
       });
@@ -1062,6 +1070,18 @@
     baseline(A, yA, zA, 1 - smoothStep((m - 0.9) / 0.1), 1 - growB, -Infinity, aEnd);
     baseline(B, yB, zB, smoothStep(m / 0.08), growB, bStart, Infinity);
     // Las barras de las dos ondas, de lejos a cerca, en modo "pantalla" para que donde se pisan se mezclen los colores
+    // Dónde va la letra de cada onda (mismo punto de la pantalla para las dos)
+    const lyricScreenX = proj(1.4, yA, zA)?.[0] ?? CLIP_W / 2;
+    const xOnWave = (y, z) => {
+      let lo = -6, hi = 10;
+      for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2, p = proj(mid, y, z); if (!p) { lo = mid; continue; } if (p[0] < lyricScreenX) lo = mid; else hi = mid; }
+      return (lo + hi) / 2;
+    };
+    const LYRIC_MODE = (typeof window !== "undefined" && window.__lyricMode) || "plane";
+    const lyricW = lerp(4.5, 4.0, hold);
+    const lyricX = { a: xOnWave(yA, zA + 0.05), b: xOnWave(yB, zB + 0.05) };
+    // Bajo la letra las barras se apagan: así se lee sin poner ningún fondo
+    const underLyric = (song, x) => { const cx = song === B ? lyricX.b : lyricX.a, hw = lyricW / 2; const d = Math.abs(x - cx) / hw; return d >= 1 ? 1 : 0.5 + 0.5 * smoothStep((d - 0.75) / 0.25); };
     const bars = [];
     const track = (song, y, z, grow, from, to) => {
       if (!song || grow <= 0.005) return;
@@ -1077,7 +1097,7 @@
         if (g <= 0 || fade <= 0) continue;
         const h = (0.06 + waveLevel(song, ms, seed) * lerp(1.45, 1.2, hold) * (1 + glow * song.beat * 0.25)) * smoothStep(g);
         const x = ((ms - song.pos) / WAVE_MS) * WAVE_GAP, p = proj(x, y, z);
-        if (p) bars.push({ x, y, z, h, song, played, glow, d: p[2], alpha: (0.35 + 0.65 * g) * fade });
+        if (p) bars.push({ x, y, z, h, song, played, glow, d: p[2], alpha: (0.35 + 0.65 * g) * fade * underLyric(song, x) });
       }
     };
     track(A, yA, zA, 1 - shrinkA, -Infinity, aEnd);
@@ -1104,12 +1124,21 @@
     }
     // La letra sobre su onda, en el mismo plano y centrada en el ahora: la de la que sale encima de su onda, la de la
     // que entra debajo de la suya. Al cambiar de línea, la nueva aparece con un fundido corto
+    // Las dos letras se centran en el mismo punto de la pantalla aunque sus ondas estén a distinta profundidad:
+    // se busca en cada onda el punto que cae justo en esa vertical
     const lyricOnWave = (slot, song, y, z, alpha) => {
       if (!song || alpha <= 0.01 || (!song.line && !song.lines?.length)) return;
       const src = paintWaveLyric(slot, song);
-      const appear = song.line ? smoothStep((song.pos - song.line.start + 120) / 260) : 1;
-      const face = Math.atan2(eye[0] - 0.9, eye[2] - z) * 0.7;
-      drawOnPlane(ctx, src, proj, 0.9, y + (1 - appear) * 0.08, z + 0.5, lerp(5.2, 4.4, hold), alpha * lerp(0.3, 1, appear), face);
+      const appear = song.line ? smoothStep((song.pos - (waveText[slot]?.pageStart ?? song.line.start) + 120) / 260) : 1;
+      // En el mismo plano que su onda (misma diagonal), un pelo por delante de las barras. Va algo hacia el fondo
+      // para que la parte cercana, que se ve más grande, no se salga de la pantalla
+      const cx = slot === "a" ? lyricX.a : lyricX.b, a = alpha * lerp(0.3, 1, appear), yy = y + (1 - appear) * 0.08;
+      if (LYRIC_MODE === "plane") { drawOnPlane(ctx, src, proj, cx, yy, z + 0.05, lyricW, a); return; }
+      // Plana: mismo ángulo que la onda en ese punto, pero sin encogerse por un lado (todas las letras del mismo tamaño)
+      const p = proj(cx, yy, z + 0.05), l = proj(cx - lyricW / 2, yy, z + 0.05), r = proj(cx + lyricW / 2, yy, z + 0.05);
+      if (!p || !l || !r) return;
+      const ang = Math.atan2(r[1] - l[1], r[0] - l[0]), sw = Math.hypot(r[0] - l[0], r[1] - l[1]), sh = (sw * src.height) / src.width;
+      ctx.save(); ctx.globalAlpha = a; ctx.translate(p[0], p[1]); ctx.rotate(ang); ctx.drawImage(src, -sw / 2, -sh / 2, sw, sh); ctx.restore();
     };
     // La letra va dentro de su propia onda, sobre las barras
     lyricOnWave("a", A, yA, zA, B ? 1 - smoothStep((m - 0.82) / 0.12) : 1);
