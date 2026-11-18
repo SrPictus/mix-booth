@@ -1,11 +1,11 @@
 [
   {
-    "name": "Mix Booth",
-    "description": "A DJ booth for Spotify's mixed playlists: two decks spinning at their BPM, a mixer that follows each transition's real EQ, filter and volume curves, and an editor to change how every transition sounds.",
+    "name": "Mix Clips",
+    "description": "Record vertical 2K clips (1440×2560) of your songs and of the mixes in your playlists, with synced lyrics, the colours of each cover and the real beat. Four styles, recorded by OBS with Spotify's sound. Ready for TikTok, Reels and Shorts.",
     "preview": "preview.webp",
-    "main": "mix-booth.js",
+    "main": "mix-clips.js",
     "readme": "README.md",
     "authors": [{ "name": "SrPictus", "url": "https://github.com/SrPictus" }],
-    "tags": ["mix", "dj", "transitions", "automix", "vitral"]
+    "tags": ["clips", "video", "tiktok", "lyrics", "mix", "obs", "vitral"]
   }
 ]

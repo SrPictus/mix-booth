@@ -1,0 +1,237 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; background: #0b0c10; overflow: hidden; }
+  canvas { display: block; }
+</style></head><body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+// Tutorial animado: cómo sacar la contraseña del WebSocket de OBS y pegarla en Mix Clips.
+// Es una maqueta (no una captura): la contraseña que se ve es inventada
+const W = 1280, H = 720, x = document.getElementById("c").getContext("2d");
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const ease = (v) => { v = clamp01(v); return v * v * (3 - 2 * v); };
+const lerp = (a, b, k) => a + (b - a) * k;
+const rr = (X, Y, w, h, r) => { x.beginPath(); x.roundRect(X, Y, w, h, r); };
+const FAKE = "kX9mR2vQ7tLp";
+
+// Línea de tiempo (segundos)
+const T = {
+  intro: [0, 1.4],          // título
+  menu: [1.4, 3.6],         // abrir Tools → WebSocket Server Settings
+  enable: [3.6, 5.8],       // marcar "Enable WebSocket server"
+  info: [5.8, 8.6],         // Show Connect Info → copiar contraseña
+  paste: [8.6, 11.6],       // pegar en Mix Clips
+  done: [11.6, 13.4],       // listo
+  safe: [13.4, 18.4],       // ¿es seguro?
+};
+const DUR = 18.4;
+const phase = (t, [a, b]) => clamp01((t - a) / (b - a));
+const inPhase = (t, [a, b]) => t >= a && t < b;
+
+function cursor(px, py, click) {
+  x.save(); x.translate(px, py);
+  if (click > 0) { x.beginPath(); x.arc(0, 0, 10 + click * 22, 0, 7); x.strokeStyle = `rgba(255,255,255,${0.6 * (1 - click)})`; x.lineWidth = 3; x.stroke(); }
+  x.beginPath(); x.moveTo(0, 0); x.lineTo(0, 26); x.lineTo(7, 20); x.lineTo(12, 31); x.lineTo(17, 29); x.lineTo(12, 18); x.lineTo(21, 18); x.closePath();
+  x.fillStyle = "#fff"; x.fill(); x.strokeStyle = "#000"; x.lineWidth = 1.5; x.stroke(); x.restore();
+}
+function caption(step, text, alpha = 1) {
+  x.save(); x.globalAlpha = alpha;
+  rr(40, H - 92, W - 80, 60, 16); x.fillStyle = "rgba(0,0,0,.72)"; x.fill();
+  rr(56, H - 80, 36, 36, 18); x.fillStyle = "#ff3b6b"; x.fill();
+  x.fillStyle = "#fff"; x.font = "800 20px Inter"; x.textAlign = "center"; x.fillText(String(step), 74, H - 55);
+  x.textAlign = "left"; x.font = "600 22px Inter"; x.fillText(text, 108, H - 54);
+  x.restore();
+}
+// Ventana tipo OBS (genérica)
+function obsWindow() {
+  rr(80, 40, W - 160, H - 150, 12); x.fillStyle = "#1f1f24"; x.fill(); x.strokeStyle = "#34343c"; x.lineWidth = 1; x.stroke();
+  x.fillStyle = "#2a2a31"; x.fillRect(80, 40, W - 160, 34);
+  x.fillStyle = "#ddd"; x.font = "500 15px Inter"; x.textAlign = "left";
+  const items = ["File", "Edit", "View", "Docks", "Profile", "Scene Collection", "Tools", "Help"]; let px = 100;
+  const pos = {};
+  for (const it of items) { pos[it] = px; x.fillText(it, px, 62); px += x.measureText(it).width + 26; }
+  // vista previa y paneles de abajo
+  rr(110, 92, W - 220, 300, 6); x.fillStyle = "#101014"; x.fill();
+  x.fillStyle = "#3a3a44"; x.font = "600 16px Inter"; x.textAlign = "center"; x.fillText("Preview", W / 2, 248);
+  const panels = ["Scenes", "Sources", "Audio Mixer", "Controls"]; const pw = (W - 220 - 30) / 4;
+  panels.forEach((p, i) => { rr(110 + i * (pw + 10), 404, pw, 150, 6); x.fillStyle = "#26262d"; x.fill(); x.fillStyle = "#999"; x.font = "600 14px Inter"; x.textAlign = "left"; x.fillText(p, 124 + i * (pw + 10), 426); });
+  return pos;
+}
+function dialog(X, Y, w, h, title) {
+  x.save(); x.shadowColor = "rgba(0,0,0,.6)"; x.shadowBlur = 40; rr(X, Y, w, h, 10); x.fillStyle = "#2b2b33"; x.fill(); x.restore();
+  rr(X, Y, w, h, 10); x.strokeStyle = "#45454f"; x.stroke();
+  x.fillStyle = "#33333c"; x.fillRect(X + 1, Y + 1, w - 2, 36);
+  x.fillStyle = "#eee"; x.font = "600 15px Inter"; x.textAlign = "left"; x.fillText(title, X + 16, Y + 24);
+}
+function checkbox(X, Y, label, on, highlight = 0) {
+  if (highlight > 0) { rr(X - 8, Y - 20, x.measureText(label).width + 60, 32, 8); x.fillStyle = `rgba(255,59,107,${0.25 * highlight})`; x.fill(); }
+  rr(X, Y - 14, 18, 18, 4); x.fillStyle = on ? "#4a7dff" : "#1d1d22"; x.fill(); x.strokeStyle = "#666"; x.stroke();
+  if (on) { x.strokeStyle = "#fff"; x.lineWidth = 2.5; x.beginPath(); x.moveTo(X + 4, Y - 5); x.lineTo(X + 8, Y); x.lineTo(X + 15, Y - 10); x.stroke(); x.lineWidth = 1; }
+  x.fillStyle = "#ddd"; x.font = "500 15px Inter"; x.textAlign = "left"; x.fillText(label, X + 28, Y);
+}
+function button(X, Y, w, label, primary = false, press = 0) {
+  rr(X, Y, w, 34, 6); x.fillStyle = press > 0 ? "#5a8cff" : primary ? "#3e6ae1" : "#3a3a44"; x.fill();
+  x.fillStyle = "#fff"; x.font = "600 14px Inter"; x.textAlign = "center"; x.fillText(label, X + w / 2, Y + 22);
+}
+
+function render(t) {
+  x.clearRect(0, 0, W, H);
+  const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#14101f"); g.addColorStop(1, "#06070b"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+
+  // 0 · Título
+  if (inPhase(t, T.intro)) {
+    const k = phase(t, T.intro), a = ease(k * 4) * (1 - ease((k - 0.8) * 5));
+    x.save(); x.globalAlpha = a; x.textAlign = "center";
+    x.fillStyle = "#fff"; x.font = "800 64px Inter"; x.fillText("Connect OBS to Mix Clips", W / 2, 320);
+    x.fillStyle = "#ff6b8a"; x.font = "600 26px Inter"; x.fillText("Get the WebSocket password in 3 steps", W / 2, 372);
+    x.restore();
+    return;
+  }
+
+  // Tarjeta final: por qué es seguro
+  if (t >= T.safe[0]) {
+    const k = phase(t, T.safe);
+    x.save(); x.globalAlpha = ease(k * 6);
+    x.textAlign = "center"; x.fillStyle = "#fff"; x.font = "800 52px Inter"; x.fillText("Is it safe?", W / 2, 150);
+    const items = [
+      ["Only inside your computer", "Mix Clips talks to OBS at 127.0.0.1, your own PC. Your password never goes online."],
+      ["The password stays with you", "It's saved only on your PC, and it's what keeps other devices from controlling OBS."],
+      ["Your OBS is left as it was", "It uses its own \u201cMix Clip\u201d profile and scene, and records only the clip and Spotify's sound."],
+    ];
+    items.forEach(([head, body], i) => {
+      const a = ease((k - 0.08 - i * 0.12) * 5), Y = 230 + i * 120;
+      x.save(); x.globalAlpha = a;
+      rr(200, Y, W - 400, 96, 18); x.fillStyle = "rgba(255,255,255,.06)"; x.fill();
+      x.beginPath(); x.arc(250, Y + 48, 22, 0, 7); x.fillStyle = "#4dff9a"; x.fill();
+      x.strokeStyle = "#0b0c10"; x.lineWidth = 4; x.beginPath(); x.moveTo(240, Y + 48); x.lineTo(247, Y + 56); x.lineTo(261, Y + 40); x.stroke(); x.lineWidth = 1;
+      x.textAlign = "left"; x.fillStyle = "#fff"; x.font = "700 24px Inter"; x.fillText(head, 292, Y + 42);
+      x.fillStyle = "rgba(255,255,255,.7)"; x.font = "500 18px Inter"; x.fillText(body, 292, Y + 72);
+      x.restore();
+    });
+    x.textAlign = "center"; x.fillStyle = "rgba(255,255,255,.55)"; x.font = "500 17px Inter";
+    x.fillText("Don\u2019t share the password, and don\u2019t open port 4455 on your router.", W / 2, 640);
+    x.restore();
+    return;
+  }
+
+  // Pantalla de Mix Clips para el último paso
+  if (t >= T.paste[0]) {
+    const k = phase(t, T.paste), kd = phase(t, T.done);
+    rr(80, 40, W - 160, H - 150, 14); x.fillStyle = "#07080d"; x.fill();
+    x.textAlign = "center"; x.fillStyle = "#fff"; x.font = "700 30px Inter"; x.fillText("Record a clip", W / 2, 110);
+    x.fillStyle = "rgba(255,255,255,.6)"; x.font = "500 15px Inter"; x.fillText("A vertical 2K video (1440×2560) of the song or the mix, recorded by OBS with Spotify's sound.", W / 2, 140);
+    // tarjetas de estilo
+    const names = ["Orbit", "Waveform", "Aura", "Kinetic"], cols = [["#ff4d8d", "#6d3bff"], ["#3b8cff", "#00e0c6"], ["#ffb347", "#ff4d6d"], ["#e6e6e6", "#7a7a7a"]];
+    names.forEach((n, i) => {
+      const X = 290 + i * 180, Y = 170;
+      rr(X, Y, 150, 190, 14); x.fillStyle = i === 1 ? "rgba(255,255,255,.1)" : "rgba(255,255,255,.04)"; x.fill(); x.strokeStyle = i === 1 ? "#fff" : "rgba(255,255,255,.15)"; x.lineWidth = 2; x.stroke(); x.lineWidth = 1;
+      const gg = x.createLinearGradient(X, Y, X + 150, Y + 150); gg.addColorStop(0, cols[i][0]); gg.addColorStop(1, cols[i][1]);
+      rr(X + 37, Y + 12, 76, 136, 8); x.fillStyle = gg; x.fill();
+      x.fillStyle = "#fff"; x.font = "700 15px Inter"; x.fillText(n, X + 75, Y + 174);
+    });
+    // fila de contraseña
+    x.textAlign = "left"; x.fillStyle = "rgba(255,255,255,.8)"; x.font = "600 16px Inter"; x.fillText("OBS password", 320, 420);
+    const fx = 470, fy = 396, fw = 420;
+    const typed = Math.round(FAKE.length * ease((k - 0.45) / 0.15));
+    rr(fx, fy, fw, 38, 19); x.fillStyle = "rgba(255,255,255,.06)"; x.fill(); x.strokeStyle = k > 0.25 && k < 0.95 ? "#fff" : "rgba(255,255,255,.25)"; x.lineWidth = k > 0.25 && k < 0.95 ? 2 : 1; x.stroke(); x.lineWidth = 1;
+    x.font = "600 16px Inter"; x.fillStyle = typed ? "#fff" : "rgba(255,255,255,.35)"; x.fillText(typed ? "•".repeat(typed) : "Tools → WebSocket Server Settings", fx + 18, fy + 25);
+    // botón grabar
+    const glow = kd > 0 ? 0.5 + 0.5 * Math.sin(t * 6) : 0;
+    rr(520, 460, 140, 40, 20); x.fillStyle = "#fff"; x.fill();
+    if (glow) { x.save(); x.shadowColor = "#ff3b5c"; x.shadowBlur = 30 * glow; rr(520, 460, 140, 40, 20); x.fill(); x.restore(); }
+    x.beginPath(); x.arc(548, 480, 6, 0, 7); x.fillStyle = "#ff3b5c"; x.fill();
+    x.fillStyle = "#000"; x.font = "700 15px Inter"; x.fillText("Record", 564, 486);
+    rr(672, 460, 100, 40, 20); x.fillStyle = "rgba(255,255,255,.08)"; x.fill(); x.fillStyle = "#fff"; x.fillText("Close", 700, 486);
+    // cursor: va al campo, clic, Ctrl+V; luego a Grabar
+    let cx, cy, click = 0;
+    if (k < 0.25) { cx = lerp(900, fx + 200, ease(k / 0.25)); cy = lerp(620, fy + 20, ease(k / 0.25)); }
+    else if (k < 0.75) { cx = fx + 200; cy = fy + 20; click = clamp01((k - 0.27) / 0.12); if (click >= 1) click = 0; }
+    else { cx = lerp(fx + 200, 590, ease((k - 0.75) / 0.25)); cy = lerp(fy + 20, 478, ease((k - 0.75) / 0.25)); }
+    if (kd > 0) { cx = 590; cy = 478; }
+    if (k > 0.33 && k < 0.6) { rr(fx + fw + 16, fy + 4, 86, 30, 8); x.fillStyle = "#ff3b6b"; x.fill(); x.fillStyle = "#fff"; x.font = "700 14px Inter"; x.textAlign = "center"; x.fillText("Ctrl + V", fx + fw + 59, fy + 24); }
+    cursor(cx, cy, click);
+    if (kd > 0) {
+      x.save(); x.globalAlpha = ease(kd * 3); rr(W / 2 - 230, 520, 460, 44, 22); x.fillStyle = "rgba(77,255,154,.15)"; x.fill(); x.strokeStyle = "#4dff9a"; x.stroke();
+      x.fillStyle = "#4dff9a"; x.font = "700 17px Inter"; x.textAlign = "center"; x.fillText("✓  Saved on your computer. Ready to record!", W / 2, 548); x.restore();
+      caption("✓", "Done: Mix Clips remembers it, you only do this once");
+    } else caption(3, "In Spotify, open Mix Clips and paste it in “OBS password”");
+    return;
+  }
+
+  // Pasos en OBS
+  const pos = obsWindow();
+  if (inPhase(t, T.menu)) {
+    const k = phase(t, T.menu);
+    const tx = pos.Tools + 18, ty = 58;
+    const open = k > 0.35;
+    if (open) {
+      rr(pos.Tools - 6, 76, 300, 168, 6); x.fillStyle = "#2b2b33"; x.fill(); x.strokeStyle = "#45454f"; x.stroke();
+      const opts = ["Auto-Configuration Wizard", "Output Timer", "Captions (Experimental)", "Scripts", "WebSocket Server Settings"];
+      opts.forEach((o, i) => {
+        const Y = 102 + i * 30;
+        if (i === 4 && k > 0.6) { rr(pos.Tools - 2, Y - 20, 292, 28, 4); x.fillStyle = "#3e6ae1"; x.fill(); }
+        x.fillStyle = "#ddd"; x.font = "500 15px Inter"; x.textAlign = "left"; x.fillText(o, pos.Tools + 10, Y);
+      });
+      rr(pos.Tools - 10, 44, x.measureText("Tools").width + 20, 26, 5); x.fillStyle = "rgba(62,106,225,.35)"; x.fill();
+      x.fillStyle = "#fff"; x.font = "500 15px Inter"; x.fillText("Tools", pos.Tools, 62);
+    }
+    let cx, cy, click = 0;
+    if (k < 0.3) { cx = lerp(640, tx, ease(k / 0.3)); cy = lerp(400, ty, ease(k / 0.3)); }
+    else if (k < 0.55) { cx = tx; cy = ty; click = clamp01((k - 0.3) / 0.15); if (click >= 1) click = 0; }
+    else { cx = lerp(tx, pos.Tools + 120, ease((k - 0.55) / 0.3)); cy = lerp(ty, 222, ease((k - 0.55) / 0.3)); click = k > 0.88 ? clamp01((k - 0.88) / 0.12) : 0; }
+    cursor(cx, cy, click);
+    caption(1, "In OBS, open Tools → WebSocket Server Settings");
+    return;
+  }
+  // Ventana de ajustes del WebSocket
+  const DX = 350, DY = 120, DW = 580, DH = 330;
+  dialog(DX, DY, DW, DH, "WebSocket Server Settings");
+  x.fillStyle = "#aaa"; x.font = "700 13px Inter"; x.textAlign = "left"; x.fillText("PLUGIN SETTINGS", DX + 24, DY + 70);
+  const ke = phase(t, T.enable), enabled = t >= T.enable[1] || ke >= 0.45;
+  checkbox(DX + 24, DY + 104, "Enable WebSocket server", enabled, inPhase(t, T.enable) ? ease((ke - 0.3) * 6) * (1 - ease((ke - 0.85) * 8)) : 0);
+  x.fillStyle = "#aaa"; x.font = "700 13px Inter"; x.fillText("SERVER SETTINGS", DX + 24, DY + 150);
+  x.fillStyle = "#ddd"; x.font = "500 15px Inter"; x.fillText("Server Port", DX + 24, DY + 184);
+  rr(DX + 170, DY + 166, 110, 28, 5); x.fillStyle = "#1d1d22"; x.fill(); x.fillStyle = "#fff"; x.fillText("4455", DX + 182, DY + 185);
+  checkbox(DX + 24, DY + 222, "Enable Authentication", true);
+  x.fillStyle = "#ddd"; x.fillText("Server Password", DX + 24, DY + 260);
+  rr(DX + 170, DY + 242, 220, 28, 5); x.fillStyle = "#1d1d22"; x.fill(); x.fillStyle = "#fff"; x.fillText("••••••••••••", DX + 182, DY + 262);
+  const pressInfo = inPhase(t, T.info) && phase(t, T.info) > 0.12 && phase(t, T.info) < 0.24;
+  button(DX + 24, DY + 284, 170, "Show Connect Info", false, pressInfo ? 1 : 0);
+  button(DX + DW - 220, DY + 284, 90, "OK", true); button(DX + DW - 120, DY + 284, 96, "Cancel");
+  if (inPhase(t, T.enable)) {
+    const k = phase(t, T.enable);
+    const target = [DX + 33, DY + 96];
+    const cx = lerp(DX + 300, target[0], ease(k / 0.35)), cy = lerp(DY + 40, target[1], ease(k / 0.35));
+    const click = k > 0.38 && k < 0.55 ? clamp01((k - 0.38) / 0.17) : 0;
+    cursor(cx, cy, click);
+    caption(2, "Tick “Enable WebSocket server”…");
+    return;
+  }
+  // Ventana "Connect Info" con la contraseña y su botón de copiar
+  const k = phase(t, T.info);
+  let cx = lerp(DX + 33, DX + 100, ease(k / 0.12)), cy = lerp(DY + 96, DY + 300, ease(k / 0.12)), click = k > 0.12 && k < 0.24 ? clamp01((k - 0.12) / 0.12) : 0;
+  if (k > 0.25) {
+    const IX = 420, IY = 200, IW = 470, IH = 220;
+    x.save(); x.globalAlpha = ease((k - 0.25) * 16);
+    dialog(IX, IY, IW, IH, "WebSocket Connect Info");
+    const rows = [["Server IP", "127.0.0.1"], ["Server Port", "4455"], ["Server Password", FAKE]];
+    rows.forEach(([a, b], i) => {
+      const Y = IY + 78 + i * 44;
+      x.fillStyle = "#bbb"; x.font = "500 15px Inter"; x.textAlign = "left"; x.fillText(a, IX + 22, Y);
+      rr(IX + 160, Y - 20, 200, 30, 5); x.fillStyle = i === 2 && k > 0.62 ? "rgba(62,106,225,.45)" : "#1d1d22"; x.fill();
+      x.fillStyle = "#fff"; x.fillText(b, IX + 172, Y);
+      button(IX + 372, Y - 21, 76, "Copy", i === 2, i === 2 && k > 0.58 && k < 0.7 ? 1 : 0);
+    });
+    x.restore();
+    const copyX = IX + 410, copyY = IY + 78 + 2 * 44 - 4;
+    if (k > 0.3) { cx = lerp(DX + 100, copyX, ease((k - 0.3) / 0.25)); cy = lerp(DY + 300, copyY, ease((k - 0.3) / 0.25)); click = k > 0.56 && k < 0.7 ? clamp01((k - 0.56) / 0.14) : 0; }
+    if (k > 0.7) { rr(copyX - 30, copyY + 26, 120, 30, 8); x.fillStyle = "#4dff9a"; x.fill(); x.fillStyle = "#000"; x.font = "700 14px Inter"; x.textAlign = "center"; x.fillText("Copied!", copyX + 30, copyY + 46); }
+  }
+  cursor(cx, cy, click);
+  caption(2, "…then “Show Connect Info” and copy the Server Password");
+}
+window.renderAt = (t) => render(Math.min(DUR - 0.001, t));
+document.fonts.ready.then(() => Promise.all(["800 64px Inter", "600 22px Inter", "500 15px Inter", "700 13px Inter"].map((f) => document.fonts.load(f)))).then(() => { render(8); window.ready = true; });
+</script></body></html>
