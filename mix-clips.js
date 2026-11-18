@@ -1595,7 +1595,16 @@ requestAnimationFrame(frame);`;
   // ---------- Entrada ----------
 
   // Un vídeo vertical con el punto de grabar. Con ancho y alto: sin ellos Spotify deja el icono a tamaño cero
-  const ICON = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3.75" y="0.75" width="8.5" height="14.5" rx="2"/><circle cx="8" cy="8" r="2.4" fill="currentColor" stroke="none"/></svg>`;
+  // Ancho como los iconos de Spotify (unos 14 px), no un rectángulo estrecho que parece más pequeño
+  const ICON = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.25" y="0.75" width="11.5" height="14.5" rx="2.5"/><circle cx="8" cy="8" r="2.75" fill="currentColor" stroke="none"/></svg>`;
+  // Spicetify deja el icono en línea con el texto y queda 2 px más arriba que los de Spotify: se centra igual que ellos
+  const iconFix = document.createElement("style");
+  iconFix.textContent = `
+    button[aria-label="Mix Clips"] { display: inline-flex !important; align-items: center; justify-content: center; }
+    button[aria-label="Mix Clips"] > span { display: flex !important; }
+    button[aria-label="Mix Clips"] svg { display: block; }
+  `;
+  document.head.append(iconFix);
   const clipsButton = new Spicetify.Playbar.Button("Mix Clips", ICON, () => {
     if (setup) setup.close();
     else if (!clip) openClipSetup();
